@@ -1,3 +1,6 @@
+# 임시/데모 (커밋 제외)
+tmp/
+
 # OS / Editor
 .DS_Store
 Thumbs.db

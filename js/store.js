@@ -133,6 +133,9 @@
       branch: '',
       prUrl: '',
       prNumber: null,
+      prState: 'none', // none | open | merged — 확정 PR 생명주기
+      issueNumber: null, // feature/<issue>-<slug> · Closes #N 규칙용
+      publishedAt: '', // PR 머지(=코드 안착) 시각
       evidence: [],
       blockedReason: '',
       tasksDone: {}, // { taskId: true } — 태스크 체크리스트 완료 여부 (live 추적)
@@ -170,6 +173,21 @@
       const next = Object.assign({}, cur);
       if (done) next[taskId] = true; else delete next[taskId];
       return this.update(featureId, { tasksDone: next });
+    },
+    /**
+     * 확정된 feature에 대해 Android 레포 PR을 연다.
+     * Phase 0: stub(mock prNumber). Phase 2에서 GitHub App 봇 호출로 교체 예정.
+     * info = { prNumber, prUrl, branch, issueNumber }
+     */
+    openPr(featureId, info = {}) {
+      return this.update(featureId, Object.assign({ prState: 'open' }, info));
+    },
+    /** PR 머지 감지(Phase 3 웹훅) → published. Phase 0에선 수동/테스트용. */
+    markMerged(featureId) {
+      return this.update(featureId, {
+        prState: 'merged',
+        publishedAt: new Date().toISOString().slice(0, 10),
+      });
     },
   };
 

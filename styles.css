@@ -91,6 +91,15 @@ button { font-family: inherit; cursor: pointer; }
 }
 .btn-primary:hover { background: #1d4ed8; }
 
+/* 비활성 버튼: 명확한 회색 처리 + hover 효과 무력화 */
+button:disabled { cursor: not-allowed; }
+.btn-primary:disabled, .btn-primary:disabled:hover {
+  background: var(--gray-bg); color: var(--muted); opacity: .7;
+}
+.btn-ghost:disabled, .btn-ghost:disabled:hover {
+  background: transparent; color: var(--muted); opacity: .6;
+}
+
 /* KPIs */
 .kpi-row { display: flex; gap: 10px; margin-top: 14px; flex-wrap: wrap; }
 .kpi {

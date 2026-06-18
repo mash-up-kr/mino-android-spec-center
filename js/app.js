@@ -394,6 +394,11 @@
     const doneMap = t.tasksDone || {};
     const doneCount = tasksList.filter((tk) => doneMap[tk.id]).length;
 
+    // PR 생성 게이트: spec 확정 + plan + tasks 가 모두 완료돼야 활성화
+    const canPr = specConfirmed && planExists && tasksList.length > 0;
+    const prOpen = t.prState === 'open';
+    const prMerged = t.prState === 'merged';
+
     const stagesHtml = `
       <div class="detail-section">
         <h3>문서 단계 (spec → plan → tasks)</h3>
@@ -442,13 +447,19 @@
         <div class="detail-badges">
           ${specBadge(t.specStatus)}
           ${deliveryBadge(t.deliveryStatus)}
+          ${prMerged ? badge('Published', 'green') : (prOpen ? badge('PR 열림', 'blue') : '')}
           ${features.isDraft(f.id) ? badge('Draft 저장', 'gray') : ''}
         </div>
         <div class="detail-actions">
           <button class="btn-ghost" id="btn-edit">편집</button>
-          <button class="btn-primary" id="btn-confirm" ${t.specStatus === 'Confirmed' ? 'disabled' : ''}>
-            ${t.specStatus === 'Confirmed' ? '확정됨' : '확정 → PR'}
+          <button class="btn-primary" id="btn-confirm" ${specConfirmed ? 'disabled' : ''}>
+            ${specConfirmed ? '확정됨' : '확정'}
           </button>
+          ${prMerged
+            ? `<a class="btn-primary" href="${t.prUrl || '#'}" target="_blank">✅ Published</a>`
+            : prOpen
+              ? `<a class="btn-primary" href="${t.prUrl || '#'}" target="_blank">PR #${t.prNumber || ''} 보기</a>`
+              : `<button class="btn-primary" id="btn-pr" ${canPr ? '' : 'disabled'} title="${canPr ? 'Android 레포에 PR 생성' : 'spec 확정 + plan + tasks 완료 후 가능'}">PR 생성</button>`}
         </div>
       </div>
 
@@ -505,10 +516,12 @@
       </div>
     `;
 
-    // 편집 / 확정
+    // 편집 / 확정 / PR 생성
     $('#btn-edit').addEventListener('click', () => openEditor(f, 'spec'));
     const confirmBtn = $('#btn-confirm');
     if (confirmBtn && !confirmBtn.disabled) confirmBtn.addEventListener('click', () => confirmSpec(f));
+    const prBtn = $('#btn-pr');
+    if (prBtn && !prBtn.disabled) prBtn.addEventListener('click', () => createPr(f));
 
     // 문서 단계 편집 (게이트)
     panel.querySelectorAll('.stage button[data-doc]').forEach((b) => {
@@ -912,7 +925,33 @@
     const tbdN = (f.tbds || []).length;
     if (tbdN > 0 && !window.confirm(`미해결 TBD ${tbdN}건이 남아있습니다.\n그래도 "확정"하시겠습니까?`)) return;
     tracking.setSpecStatus(f.id, 'Confirmed');
-    window.alert('확정되었습니다.\nAndroid 레포 PR 자동 생성은 3단계(Firebase Functions + 봇)에서 연결됩니다.');
+    renderAll();
+    renderDetail();
+  }
+
+  /**
+   * 확정된 feature → Team-MINO-Android(base: develop) PR 생성.
+   * Phase 0: stub(mock PR 정보). Phase 2에서 GitHub App 봇(Firebase Functions)이
+   *   feature/<issue>-<slug> 브랜치에 docs/specs/<id>/{spec,plan,tasks}.md 를 커밋하고
+   *   PR(제목=feature title, 본문 Closes #N)을 여는 로직으로 교체된다.
+   * 머지 감지(웹훅)는 Phase 3 → tracking.markMerged() → Published.
+   */
+  function createPr(f) {
+    const t = tracking.get(f.id);
+    const planExists = !!(f.planMd && f.planMd.trim());
+    if (t.specStatus !== 'Confirmed' || !planExists || !(f.tasks || []).length) {
+      window.alert('PR 생성은 spec 확정 + plan + tasks 가 모두 완료된 후 가능합니다.');
+      return;
+    }
+    if (!window.confirm('Team-MINO-Android(base: develop)에 이 스펙의 PR을 생성합니다.\n(Phase 0: 실제 PR 대신 mock 정보로 연결됩니다.)')) return;
+    const slug = String(f.id).replace(/[^a-z0-9]+/gi, '-').toLowerCase().replace(/(^-|-$)/g, '');
+    const num = 100 + Math.floor(Math.random() * 900); // stub 번호 (실제는 봇이 반환)
+    tracking.openPr(f.id, {
+      prNumber: num,
+      prUrl: `https://github.com/mash-up-kr/Team-MINO-Android/pull/${num}`,
+      branch: `feature/0-${slug}`, // 이슈번호(0)는 Phase 2에서 실제 연결
+    });
+    window.alert(`PR(stub) #${num} 생성됨 · prState: open\n실제 PR 자동 생성은 Phase 2(GitHub App 봇)에서 연결됩니다.`);
     renderAll();
     renderDetail();
   }
