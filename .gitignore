@@ -1,0 +1,24 @@
+# OS / Editor
+.DS_Store
+Thumbs.db
+*.swp
+
+# Logs
+*.log
+npm-debug.log*
+
+# Node (향후 Firebase Functions)
+node_modules/
+functions/node_modules/
+
+# Secrets — 절대 커밋 금지
+.env
+.env.*
+*serviceAccount*.json
+.runtimeconfig.json
+
+# Firebase
+.firebase/
+firebase-debug.log
+firestore-debug.log
+ui-debug.log
