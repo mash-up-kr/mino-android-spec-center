@@ -1,0 +1,135 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>MASC · Mino Android Spec Center</title>
+  <link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+  <!-- ===================== Login ===================== -->
+  <div id="login" class="login-overlay">
+    <form class="login-card" id="login-form">
+      <div class="brand">
+        <div class="logo-badge">M</div>
+        <h1>MASC</h1>
+      </div>
+      <p>민호야 잘하자 · 안드로이드 팀 스펙 센터</p>
+      <label for="email">이메일</label>
+      <input id="email" type="email" placeholder="name@mino.team" autocomplete="username" />
+      <label for="password">비밀번호</label>
+      <input id="password" type="password" placeholder="비밀번호" autocomplete="current-password" />
+      <button type="submit" class="btn-primary">로그인</button>
+      <div class="login-error" id="login-error"></div>
+      <div class="login-hint">v1 mock · 예) jaesung@mino.team / 아무 비밀번호</div>
+    </form>
+  </div>
+
+  <!-- ===================== App ===================== -->
+  <div id="app" class="hidden">
+    <header class="app-header">
+      <div class="header-top">
+        <div class="logo-badge">M</div>
+        <div class="titles">
+          <h1>Spec Center</h1>
+          <span id="meta-line">Team-MINO-Android</span>
+        </div>
+        <div class="spacer"></div>
+        <button class="btn-ghost" id="btn-legend">상태 안내</button>
+        <button class="btn-ghost" id="btn-reset">필터 초기화</button>
+        <div class="user-chip" id="user-chip"></div>
+        <button class="btn-ghost" id="btn-logout">로그아웃</button>
+      </div>
+      <div class="kpi-row" id="kpi-row"></div>
+    </header>
+
+    <div class="workspace">
+      <!-- Left -->
+      <aside class="panel">
+        <div class="panel-b">
+          <div class="side-section">
+            <div class="lbl">모듈</div>
+            <div id="module-list"></div>
+          </div>
+          <div class="side-section">
+            <div class="lbl">필터</div>
+            <div class="filter-group">
+              <label>스펙 상태</label>
+              <select id="f-spec"></select>
+            </div>
+            <div class="filter-group">
+              <label>작업 상태</label>
+              <select id="f-delivery"></select>
+            </div>
+            <div class="filter-group">
+              <label>작업자</label>
+              <select id="f-assignee"></select>
+            </div>
+          </div>
+          <div class="side-section">
+            <div class="lbl">빠른 필터</div>
+            <div class="chips" id="quick-filters">
+              <button class="chip" data-q="unassigned">미할당</button>
+              <button class="chip" data-q="tbd">TBD 있음</button>
+              <button class="chip" data-q="blocked">Blocked</button>
+              <button class="chip" data-q="pr">PR 연결</button>
+            </div>
+          </div>
+        </div>
+      </aside>
+
+      <!-- Center -->
+      <main class="panel">
+        <div class="toolbar">
+          <input class="search" id="search" type="text" placeholder="Feature 검색 (제목 / ID / 모듈)" />
+          <div class="view-toggle">
+            <button id="view-table" class="active">표</button>
+            <button id="view-board">보드</button>
+          </div>
+          <button class="btn-primary" id="btn-new">+ 새 스펙</button>
+        </div>
+        <div id="center-body"></div>
+      </main>
+
+      <!-- Right -->
+      <aside class="panel" id="detail-panel">
+        <div class="detail-empty">왼쪽 목록에서 Feature를 선택하세요.</div>
+      </aside>
+    </div>
+
+    <!-- 상태 안내 모달 -->
+    <div id="legend-modal" class="modal-overlay hidden">
+      <div class="modal-card">
+        <div class="modal-head">
+          <h2>상태 안내</h2>
+          <button class="modal-close" id="legend-close" aria-label="닫기">×</button>
+        </div>
+        <div class="modal-body" id="legend-body"></div>
+      </div>
+    </div>
+
+    <!-- 스펙 편집기 모달 -->
+    <div id="editor-modal" class="modal-overlay hidden">
+      <div class="modal-card modal-wide">
+        <div class="modal-head">
+          <h2 id="editor-title">새 스펙</h2>
+          <button class="modal-close" id="editor-close" aria-label="닫기">×</button>
+        </div>
+        <div class="modal-body" id="editor-body"></div>
+        <div class="modal-foot">
+          <span class="editor-msg" id="editor-msg"></span>
+          <div class="spacer"></div>
+          <button class="btn-ghost" id="editor-cancel">취소</button>
+          <button class="btn-primary" id="editor-save">저장</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script src="data/feature-list.js"></script>
+  <script src="data/tracking.js"></script>
+  <script src="js/store.js"></script>
+  <script src="js/spec-parse.js"></script>
+  <script src="js/app.js"></script>
+</body>
+</html>
