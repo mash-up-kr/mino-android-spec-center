@@ -349,6 +349,23 @@ table.feature-table { width: 100%; border-collapse: collapse; }
 .list-row input { padding: 7px 9px; border: 1px solid var(--border); border-radius: 8px; font-size: 13px; }
 .list-row .k { width: 70px; flex: none; }
 .list-row .grow { flex: 1; }
+/* Spec Item 편집 행: 항목당 입력이 많아 줄바꿈 허용 */
+.list-row.item-row { flex-wrap: wrap; align-items: stretch; border: 1px solid var(--border); border-radius: 9px; padding: 8px; }
+.list-row.item-row .item-id { width: 130px; flex: none; font-family: ui-monospace, monospace; }
+.list-row.item-row .item-title { width: 110px; flex: none; padding: 7px 9px; border: 1px solid var(--border); border-radius: 8px; font-size: 13px; }
+.list-row.item-row .item-status { flex: none; padding: 7px 9px; border: 1px solid var(--border); border-radius: 8px; font-size: 12px; }
+.list-row.item-row .task-items { width: 100%; }
+.list-row .task-items { width: 150px; flex: none; font-family: ui-monospace, monospace; font-size: 12px; }
+
+/* Spec Item 상세 표시 */
+.spec-item-list { margin: 0; padding-left: 0; list-style: none; }
+.spec-item { padding: 8px 0; border-bottom: 1px dashed var(--border); }
+.spec-item:last-child { border-bottom: none; }
+.spec-item-h { display: flex; align-items: center; gap: 8px; font-size: 13px; font-weight: 600; margin-bottom: 3px; }
+.spec-item-h .mono { color: var(--accent); font-size: 11px; }
+.spec-item-b { font-size: 12px; color: var(--muted); line-height: 1.5; }
+.spec-item-b .when { color: var(--text); }
+.spec-item-b .then { color: var(--text); }
 .btn-add { background: var(--accent-soft); color: var(--accent); border: none; border-radius: 7px; padding: 5px 12px; font-size: 12px; font-weight: 600; }
 .btn-del { background: transparent; border: 1px solid var(--border); border-radius: 7px; padding: 6px 9px; color: var(--muted); flex: none; }
 .btn-del:hover { color: var(--red); border-color: var(--red); }

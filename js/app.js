@@ -29,6 +29,15 @@
     Verified: '머지 + 수용조건(AC)·근거(스크린샷/테스트) 확인 완료.',
     Blocked: '외부 의존(서버 API·디자인 확정·TBD 미해소)으로 진행 불가.',
   };
+  const ITEM_STATUS = ['confirmed', 'partial', 'needs_policy', 'inferred', 'variant', 'out_of_scope'];
+  const ITEM_LABEL = {
+    confirmed: '확정', partial: '일부확정', needs_policy: '정책필요',
+    inferred: '추론', variant: '후보안', out_of_scope: '범위외',
+  };
+  const ITEM_COLOR = {
+    confirmed: 'green', partial: 'amber', needs_policy: 'red',
+    inferred: 'blue', variant: 'gray', out_of_scope: 'gray',
+  };
 
   // ---------- 화면 상태 ----------
   const state = {
@@ -52,6 +61,7 @@
     `<span class="badge ${color}"${title ? ` title="${title}"` : ''}>${text}</span>`;
   const specBadge = (s) => badge(SPEC_LABEL[s] || s, SPEC_COLOR[s] || 'gray', SPEC_DESC[s]);
   const deliveryBadge = (s) => badge(DELIVERY_LABEL[s] || s, DELIVERY_COLOR[s] || 'gray', DELIVERY_DESC[s]);
+  const itemBadge = (s) => badge(ITEM_LABEL[s] || s || 'confirmed', ITEM_COLOR[s] || 'gray');
 
   // ===================== Auth =====================
   function showLogin() {
@@ -213,7 +223,9 @@
       if (state.quick.has('blocked') && t.deliveryStatus !== 'Blocked') return false;
       if (state.quick.has('pr') && !t.prUrl) return false;
       if (state.search) {
-        const hay = `${f.title} ${f.id} ${f.module}`.toLowerCase();
+        const itemText = (f.items || []).map((it) => `${it.id} ${it.title} ${it.trigger} ${it.response}`).join(' ');
+        const tbdText = (f.tbds || []).map((q) => q.question).join(' ');
+        const hay = `${f.title} ${f.id} ${f.module} ${itemText} ${tbdText}`.toLowerCase();
         if (!hay.includes(state.search)) return false;
       }
       return true;
@@ -356,8 +368,12 @@
     const t = tracking.get(state.selectedId);
     if (!f) return;
 
-    const acHtml = (f.acceptanceCriteria || [])
-      .map((ac) => `<li><span class="id">${ac.id}</span><span>${ac.text}</span></li>`).join('');
+    const itemList = f.items || [];
+    const itemsHtml = itemList
+      .map((it) => `<li class="spec-item">
+        <div class="spec-item-h"><span class="mono">${it.id || ''}</span> ${it.title || ''} ${itemBadge(it.specStatus)}</div>
+        <div class="spec-item-b"><span class="when">${it.trigger || ''}</span> → <span class="then">${it.response || ''}</span></div>
+      </li>`).join('');
 
     const nonGoals = (f.nonGoals || []).map((g) => (typeof g === 'string' ? g : (g && g.text) || '')).filter(Boolean);
     const nonGoalHtml = nonGoals.length
@@ -417,18 +433,18 @@
     const planHtml = planExists
       ? `<div class="detail-section"><h3>Plan</h3><div class="md">${mdToHtml(f.planMd)}</div></div>` : '';
 
-    // AC 커버리지: 태스크들이 참조한 AC vs spec의 전체 AC
-    const allAcIds = (f.acceptanceCriteria || []).map((ac) => ac.id).filter(Boolean);
-    const coveredAcs = new Set();
-    tasksList.forEach((tk) => (tk.acs || []).forEach((a) => coveredAcs.add(a)));
-    const uncovered = allAcIds.filter((a) => !coveredAcs.has(a));
-    const coverageHtml = (tasksList.length && allAcIds.length)
+    // 커버리지: 태스크들이 참조한 item vs spec의 전체 item
+    const allItemIds = itemList.map((it) => it.id).filter(Boolean);
+    const coveredItems = new Set();
+    tasksList.forEach((tk) => (tk.itemRefs || []).forEach((a) => coveredItems.add(a)));
+    const uncovered = allItemIds.filter((a) => !coveredItems.has(a));
+    const coverageHtml = (tasksList.length && allItemIds.length)
       ? (uncovered.length
-        ? `<div class="task-coverage warn">⚠ 태스크가 덮지 않은 AC: ${uncovered.map((a) => `<span class="mono">${a}</span>`).join(' ')}</div>`
-        : `<div class="task-coverage ok">✓ 모든 AC가 태스크로 덮였습니다</div>`)
+        ? `<div class="task-coverage warn">⚠ 태스크가 덮지 않은 기능: ${uncovered.map((a) => `<span class="mono">${a}</span>`).join(' ')}</div>`
+        : `<div class="task-coverage ok">✓ 모든 기능이 태스크로 덮였습니다</div>`)
       : '';
-    const acChips = (tk) => (tk.acs && tk.acs.length)
-      ? ' ' + tk.acs.map((a) => `<span class="ac-chip">${a}</span>`).join('') : '';
+    const acChips = (tk) => (tk.itemRefs && tk.itemRefs.length)
+      ? ' ' + tk.itemRefs.map((a) => `<span class="ac-chip">${a}</span>`).join('') : '';
 
     const tasksHtml = tasksList.length
       ? `<div class="detail-section"><h3>Tasks (${doneCount}/${tasksList.length})</h3>
@@ -494,8 +510,8 @@
       ${statesHtml}
 
       <div class="detail-section">
-        <h3>수용 조건 (AC)</h3>
-        <ul class="ac-list">${acHtml || '<li>정의된 AC 없음</li>'}</ul>
+        <h3>상세 기능 (Spec Items · ${itemList.length})</h3>
+        <ul class="spec-item-list">${itemsHtml || '<li>정의된 기능 항목 없음</li>'}</ul>
       </div>
 
       <div class="detail-section">
@@ -560,10 +576,14 @@
   const attr = (s) => String(s == null ? '' : s).replace(/&/g, '&amp;').replace(/"/g, '&quot;');
   const escTxt = (s) => String(s == null ? '' : s).replace(/&/g, '&amp;').replace(/</g, '&lt;');
 
-  function acRow(ac) {
-    return `<div class="list-row" data-row="ac">
-      <input class="k ac-id" placeholder="AC1" value="${attr(ac && ac.id)}" />
-      <input class="grow ac-text" placeholder="수용 조건 텍스트" value="${attr(ac && ac.text)}" />
+  function itemRow(it) {
+    const opts = ITEM_STATUS.map((s) => `<option value="${s}" ${(it && it.specStatus) === s ? 'selected' : ''}>${ITEM_LABEL[s]}</option>`).join('');
+    return `<div class="list-row item-row" data-row="item">
+      <input class="k item-id" placeholder="LIST_LOAD" value="${attr(it && it.id)}" />
+      <input class="item-title" placeholder="기능명" value="${attr(it && it.title)}" />
+      <input class="grow item-trigger" placeholder="Trigger (언제)" value="${attr(it && it.trigger)}" />
+      <input class="grow item-response" placeholder="화면 반응 (결과)" value="${attr(it && it.response)}" />
+      <select class="item-status">${opts}</select>
       <button class="btn-del" type="button" data-del>×</button></div>`;
   }
   function tbdRow(t) {
@@ -578,6 +598,7 @@
       <input class="k task-id" placeholder="T1" value="${attr(t && t.id)}" />
       <input class="k task-mod" placeholder=":core:domain" value="${attr(t && t.module)}" />
       <input class="grow task-title" placeholder="태스크 제목" value="${attr(t && t.title)}" />
+      <input class="k task-items" placeholder="LIST_LOAD, ..." value="${attr(t && (t.itemRefs || []).join(', '))}" />
       <button class="btn-del" type="button" data-del>×</button></div>`;
   }
   function nonGoalRow(g) {
@@ -630,8 +651,8 @@
         <div id="ed-state">${(f.states || []).map(stateRow).join('')}</div>
       </div>
       <div class="editor-section">
-        <div class="h"><span>수용 조건 (AC)</span><button class="btn-add" type="button" data-add="ac">+ 추가</button></div>
-        <div id="ed-ac">${(f.acceptanceCriteria || []).map(acRow).join('')}</div>
+        <div class="h"><span>상세 기능 (Spec Items)</span><button class="btn-add" type="button" data-add="item">+ 추가</button></div>
+        <div id="ed-item">${(f.items || []).map(itemRow).join('')}</div>
       </div>
       <div class="editor-section">
         <div class="h"><span>Open Questions (TBD)</span><button class="btn-add" type="button" data-add="tbd">+ 추가</button></div>
@@ -648,8 +669,8 @@
     body.querySelectorAll('[data-add]').forEach((btn) =>
       btn.addEventListener('click', () => {
         const kind = btn.dataset.add;
-        const cont = { ac: '#ed-ac', tbd: '#ed-tbd', task: '#ed-task', nongoal: '#ed-ng', state: '#ed-state' }[kind];
-        const rowFn = { ac: acRow, tbd: tbdRow, task: taskRow, nongoal: nonGoalRow, state: stateRow }[kind];
+        const cont = { item: '#ed-item', tbd: '#ed-tbd', task: '#ed-task', nongoal: '#ed-ng', state: '#ed-state' }[kind];
+        const rowFn = { item: itemRow, tbd: tbdRow, task: taskRow, nongoal: nonGoalRow, state: stateRow }[kind];
         body.querySelector(cont).insertAdjacentHTML('beforeend', rowFn());
         wireDeletes();
       }));
@@ -736,9 +757,9 @@
     $('#pane-form').innerHTML = buildFormHtml(parsed);
     wireFormButtons();
     switchPane('form');
-    const n = parsed.acceptanceCriteria.length, t = parsed.tbds.length, k = parsed.tasks.length;
+    const n = parsed.items.length, t = parsed.tbds.length, k = parsed.tasks.length;
     const g = parsed.nonGoals.length, s = parsed.states.length;
-    msg(`가져왔습니다 — AC ${n} · TBD ${t} · 비목표 ${g} · 상태 ${s} · Tasks ${k}. 검토 후 저장하세요.`, false);
+    msg(`가져왔습니다 — 기능 ${n} · TBD ${t} · 비목표 ${g} · 상태 ${s} · Tasks ${k}. 검토 후 저장하세요.`, false);
   }
 
   const STAGE_PROMPTS = {
@@ -770,15 +791,19 @@
       '- 빈 상태: <표시할 데이터가 없을 때>',
       '- 에러: <실패 시 동작 (재시도/메시지 등)>',
       '',
-      '## 수용 조건',
-      '- AC1: <…할 때> / <…하면> / <…된다>  (Given-When-Then)',
+      '## 상세 기능 명세',
+      '| ID | 기능 | Trigger | 화면 반응 | 확정 |',
+      '|---|---|---|---|---|',
+      '| LIST_LOAD | 목록 로드 | <언제> | <…된다> | confirmed |',
+      '| <ID_2> | <기능명> | <언제> | <화면 반응> | partial |',
       '',
       '## Open Questions',
       '- TBD-1 (기획/디자인/서버): <확인이 필요한 미해결 질문>',
       '',
       '규칙:',
       '- "어떻게(구현)"가 아니라 "무엇/왜"에 집중. 불명확한 점은 추측 말고 Open Questions에 TBD로.',
-      '- 수용 조건은 각 줄을 Given(전제)/When(행동)/Then(결과)으로 측정 가능하게.',
+      '- 기능은 화면 인터랙션 단위로 잘게 쪼갠다. ID는 대문자 스네이크(LIST_LOAD), Trigger=언제 / 화면 반응=그 결과.',
+      '- 확정 열은 confirmed / partial / needs_policy / inferred / variant / out_of_scope 중 하나. 근거가 불충분하면 partial·needs_policy로.',
       '- 비목표·상태/예외 항목은 "- 라벨: 내용" 한 줄 불릿으로 (대시보드 파싱용).',
       '- 상태/예외는 Screen 기능이면 반드시 채울 것. Infra면 생략 가능.',
       '- 위 형식 외 다른 텍스트는 출력하지 말 것.',
@@ -815,12 +840,12 @@
       '- Figma node (디자인 기준)',
       '',
       '출력(마크다운): "## Tasks" 섹션에 태스크를 나열. 각 줄은 다음 형식을 반드시 지킬 것:',
-      '- T1 [:core:domain]: <태스크 제목> (AC1, AC2)',
-      '   - 끝의 (AC..)는 이 태스크가 충족하는 수용 조건 번호 (추적성). 없으면 생략.',
+      '- T1 [:core:domain]: <태스크 제목> (LIST_LOAD, LIST_SORT)',
+      '   - 끝의 (…)는 이 태스크가 구현하는 spec 기능 ID(대문자 스네이크) 목록 (추적성). 없으면 생략.',
       '각 태스크 아래에 동작 명세 / 디자인 기준(Figma node) / 완료 조건(DoD)을 들여쓰기로 적되,',
-      '태스크 줄 자체는 위 "- T# [:module]: 제목 (AC..)" 형식 유지 (대시보드 체크리스트 파싱용).',
+      '태스크 줄 자체는 위 "- T# [:module]: 제목 (ITEM_ID..)" 형식 유지 (대시보드 체크리스트 파싱용).',
       '태스크 = 원자적 커밋 단위. 테스트를 앞에 둘 것.',
-      'spec의 모든 AC가 최소 하나의 태스크로 덮이도록 할 것.',
+      'spec의 모든 기능(item)이 최소 하나의 태스크로 덮이도록 할 것.',
       '',
       '--- 이 기능의 plan ---',
       '<여기에 plan 본문 붙여넣기>',
@@ -899,10 +924,13 @@
       trigger: v('#ed-trigger'),
       behavior: v('#ed-behavior'),
       designRef: { figmaNode: v('#ed-figma-node'), url: v('#ed-figma-url') },
-      acceptanceCriteria: collectRows('#ed-ac', { id: '.ac-id', text: '.ac-text' }),
+      items: collectRows('#ed-item', { id: '.item-id', title: '.item-title', trigger: '.item-trigger', response: '.item-response', specStatus: '.item-status' })
+        .filter((o) => o.id || o.title || o.trigger || o.response)
+        .map((o) => Object.assign(o, { specStatus: o.specStatus || 'confirmed' })),
       tbds: collectRows('#ed-tbd', { id: '.tbd-id', resolver: '.tbd-res', question: '.tbd-q' }),
-      tasks: collectRows('#ed-task', { id: '.task-id', module: '.task-mod', title: '.task-title' })
-        .map((t) => Object.assign({ acs: ((existing && existing.tasks) || []).find((x) => x.id === t.id)?.acs || [] }, t)),
+      tasks: collectRows('#ed-task', { id: '.task-id', module: '.task-mod', title: '.task-title', refs: '.task-items' })
+        .filter((o) => o.id || o.title)
+        .map((t) => ({ id: t.id, module: t.module, title: t.title, itemRefs: t.refs ? t.refs.split(/[,\s]+/).map((s) => s.trim()).filter(Boolean) : [] })),
       nonGoals: collectRows('#ed-ng', { text: '.ng-text' }).map((o) => o.text),
       states: collectRows('#ed-state', { label: '.st-label', text: '.st-text' }),
       relatedFeatures: v('#ed-related').split(',').map((s) => s.trim()).filter(Boolean),
@@ -924,6 +952,9 @@
   function confirmSpec(f) {
     const tbdN = (f.tbds || []).length;
     if (tbdN > 0 && !window.confirm(`미해결 TBD ${tbdN}건이 남아있습니다.\n그래도 "확정"하시겠습니까?`)) return;
+    const unconfirmed = (f.items || []).filter((it) => it.specStatus && it.specStatus !== 'confirmed');
+    if (unconfirmed.length &&
+      !window.confirm(`확정되지 않은 기능 ${unconfirmed.length}건(${unconfirmed.map((i) => i.id).join(', ')})이 있습니다.\n그래도 "확정"하시겠습니까?`)) return;
     tracking.setSpecStatus(f.id, 'Confirmed');
     renderAll();
     renderDetail();

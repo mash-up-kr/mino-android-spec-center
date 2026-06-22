@@ -64,6 +64,23 @@
   const MODULE_NAMES = {};
   (seed.modules || []).forEach((m) => { MODULE_NAMES[m.id] = m.name; });
 
+  // 구 모델(acceptanceCriteria / task.acs) → 신 모델(items / task.itemRefs) 하위호환
+  function migrate(f) {
+    if (!f) return f;
+    if (!Array.isArray(f.items)) {
+      f.items = Array.isArray(f.acceptanceCriteria)
+        ? f.acceptanceCriteria.map((ac, i) => ({
+            id: ac.id || ('ITEM_' + (i + 1)), title: '', trigger: '',
+            response: ac.text || '', specStatus: 'confirmed',
+          }))
+        : [];
+    }
+    (f.tasks || []).forEach((t) => {
+      if (!Array.isArray(t.itemRefs)) t.itemRefs = Array.isArray(t.acs) ? t.acs : [];
+    });
+    return f;
+  }
+
   const features = {
     enums() {
       return seed.enums || {};
@@ -73,10 +90,10 @@
       const map = new Map();
       (seed.features || []).forEach((f) => map.set(f.id, f));
       Object.values(drafts).forEach((f) => map.set(f.id, f));
-      return [...map.values()];
+      return [...map.values()].map(migrate);
     },
     get(id) {
-      return drafts[id] || (seed.features || []).find((f) => f.id === id) || null;
+      return migrate(drafts[id] || (seed.features || []).find((f) => f.id === id) || null);
     },
     /** 현재 feature들에서 모듈 목록을 동적으로 산출 (이름은 seed 기준, 없으면 id) */
     modules() {
@@ -89,7 +106,7 @@
       return {
         id: '', title: '', module: '', type: 'Screen', trigger: '', behavior: '',
         designRef: { figmaNode: '', url: '' },
-        acceptanceCriteria: [], tbds: [], tasks: [], relatedFeatures: [],
+        items: [], tbds: [], tasks: [], relatedFeatures: [],
         nonGoals: [], states: [],
         planMd: '', tasksMd: '',
         sources: { spec: '', plan: '', tasks: '' },

@@ -1,18 +1,31 @@
-/**
- * MASC 스펙 마크다운 파서 (에이전트 출력 → 구조화 feature)
- * -------------------------------------------------------------
- * 의존성 없음. 브라우저(window.MASCParseSpec) + node(module.exports) 모두 동작.
- * 입력 형식은 docs/spec-format.md 참고.
- */
 (function () {
   const SECTION_ALIASES = {
     behavior: ['동작', 'behavior', '개요', '요약', 'summary'],
     nongoal: ['비목표', '비 목표', 'non-goals', 'non goals', 'nongoals', 'out of scope', 'scope'],
     states: ['상태/예외', '상태·예외', '상태', '예외', 'states', 'state', 'edge cases', 'edge case'],
-    ac: ['수용 조건', '수용조건', 'acceptance criteria', 'acceptance', 'ac'],
+    items: ['상세 기능 명세', '기능 명세', '상세 기능', '기능 목록', 'spec items', 'items', '수용 조건', '수용조건', 'acceptance criteria', 'acceptance', 'ac'],
     tbd: ['open questions', 'open question', 'tbd', '미해결', '미해결 결정', 'clarify', 'clarification'],
     tasks: ['tasks', 'task', '작업 목록', '작업'],
   };
+
+  const ITEM_STATUS = ['confirmed', 'partial', 'needs_policy', 'inferred', 'variant', 'out_of_scope'];
+  const STATUS_ALIASES = {
+    confirmed: ['confirmed', '확정'],
+    partial: ['partial', '일부확정', '일부 확정', '일부'],
+    needs_policy: ['needs_policy', 'needs policy', '정책필요', '정책 필요', '정책'],
+    inferred: ['inferred', '추론'],
+    variant: ['variant', '후보안', '후보', '대안'],
+    out_of_scope: ['out_of_scope', 'out of scope', '범위외', '범위 외', '제외'],
+  };
+
+  function normStatus(v) {
+    const s = String(v || '').trim().toLowerCase();
+    if (!s) return 'confirmed';
+    for (const [kind, arr] of Object.entries(STATUS_ALIASES)) {
+      if (arr.some((a) => s === a || s.startsWith(a))) return kind;
+    }
+    return ITEM_STATUS.includes(s) ? s : 'confirmed';
+  }
 
   function sectionKind(heading) {
     const h = heading.trim().toLowerCase().replace(/[()]/g, '').trim();
@@ -34,13 +47,12 @@
     const r = {
       id: '', title: '', module: '', type: 'Screen', trigger: '', behavior: '',
       designRef: { figmaNode: '', url: '' },
-      acceptanceCriteria: [], tbds: [], tasks: [], relatedFeatures: [],
+      items: [], tbds: [], tasks: [], relatedFeatures: [],
       nonGoals: [], states: [],
     };
     if (!text) return r;
     let body = String(text).replace(/\r\n/g, '\n');
 
-    // --- frontmatter (맨 위 --- 블록) ---
     const fm = body.match(/^﻿?---\n([\s\S]*?)\n---\n?/);
     if (fm) {
       fm[1].split('\n').forEach((line) => {
@@ -62,15 +74,14 @@
       body = body.slice(fm[0].length);
     }
 
-    // --- 본문 섹션 ---
-    const sections = { behavior: [], nongoal: [], states: [], ac: [], tbd: [], tasks: [] };
+    const sections = { behavior: [], nongoal: [], states: [], items: [], tbd: [], tasks: [] };
     const preamble = [];
     let cur = null;
     body.split('\n').forEach((raw) => {
       const line = raw.replace(/\s+$/, '');
       const h1 = line.match(/^#\s+(.+)/);
       if (h1) { if (!r.title) r.title = h1[1].trim(); cur = null; return; }
-      const h2 = line.match(/^##\s+(.+)/);
+      const h2 = line.match(/^#{2,4}\s+(.+)/);
       if (h2) { cur = sectionKind(h2[1]); return; }
       if (cur) sections[cur].push(line);
       else if (line.trim()) preamble.push(line);
@@ -80,14 +91,34 @@
 
     const isBullet = (l) => /^\s*[-*]\s+/.test(l);
     const bulletText = (l) => l.replace(/^\s*[-*]\s+/, '');
+    const isTableRow = (l) => /^\s*\|/.test(l);
+    const isDivider = (l) => /^\s*\|?[\s:|-]+\|?\s*$/.test(l) && l.includes('-');
+    const cells = (l) => l.replace(/^\s*\|/, '').replace(/\|\s*$/, '').split('|').map((c) => c.trim());
 
-    sections.ac.filter(isBullet).forEach((l, n) => {
-      const m = bulletText(l).match(/^(AC[-\s]?\d+)?\s*[:：\-]?\s*(.*)$/i);
-      r.acceptanceCriteria.push({
-        id: (m && m[1] ? m[1] : 'AC' + (n + 1)).replace(/\s/g, ''),
-        text: (m ? m[2] : bulletText(l)).trim(),
+    // --- items: 테이블(| ID | 기능 | Trigger | 화면 반응 | 확정 |) 우선, 없으면 불릿(레거시 AC) ---
+    const itemTableRows = sections.items.filter(isTableRow).filter((l) => !isDivider(l));
+    if (itemTableRows.length) {
+      itemTableRows.forEach((l, n) => {
+        const c = cells(l);
+        const first = (c[0] || '').toLowerCase();
+        if (n === 0 && /(^id$|feature id|기능 id|^기능$)/.test(first)) return; // 헤더 스킵
+        const id = (c[0] || '').replace(/`/g, '').trim();
+        if (!id) return;
+        r.items.push({
+          id,
+          title: (c[1] || '').trim(),
+          trigger: (c[2] || '').trim(),
+          response: (c[3] || '').trim(),
+          specStatus: normStatus(c[4]),
+        });
       });
-    });
+    } else {
+      sections.items.filter(isBullet).forEach((l, n) => {
+        const m = bulletText(l).match(/^([A-Z][A-Z0-9_]+|AC[-\s]?\d+)?\s*[:：\-]?\s*(.*)$/i);
+        const id = (m && m[1] ? m[1] : 'ITEM_' + (n + 1)).replace(/\s/g, '');
+        r.items.push({ id, title: '', trigger: '', response: (m ? m[2] : bulletText(l)).trim(), specStatus: 'confirmed' });
+      });
+    }
 
     sections.tbd.filter(isBullet).forEach((l, n) => {
       const m = bulletText(l).match(/^(TBD[-\s]?\d+)?\s*(?:\(([^)]*)\))?\s*[:：\-]?\s*(.*)$/i);
@@ -101,25 +132,23 @@
     sections.tasks.filter(isBullet).forEach((l, n) => {
       const m = bulletText(l).match(/^(T\d+)?\s*(?:\[([^\]]*)\])?\s*[:：\-]?\s*(.*)$/i);
       let title = (m ? m[3] : bulletText(l)).trim();
-      // 제목 끝의 "(AC1, AC2)" → 추적성 acs로 추출하고 제목에서 분리
-      const acs = [];
-      const am = title.match(/\(([^)]*AC[^)]*)\)\s*$/i);
+      const itemRefs = [];
+      const am = title.match(/\(([^)]*)\)\s*$/);
       if (am) {
         am[1].split(/[,\s]+/).forEach((tok) => {
           const t = tok.trim().toUpperCase().replace(/\s/g, '');
-          if (/^AC\d+$/.test(t)) acs.push(t);
+          if (/^[A-Z][A-Z0-9_]+$/.test(t)) itemRefs.push(t);
         });
-        if (acs.length) title = title.slice(0, am.index).trim();
+        if (itemRefs.length) title = title.slice(0, am.index).trim();
       }
       r.tasks.push({
         id: (m && m[1] ? m[1] : 'T' + (n + 1)),
         module: (m && m[2] ? m[2] : '').trim(),
         title,
-        acs,
+        itemRefs,
       });
     });
 
-    // 최상위 불릿만(들여쓴 하위 불릿 제외) — "없음"은 무시
     const topBullet = (l) => /^[-*]\s+/.test(l);
     sections.nongoal.filter(topBullet).forEach((l) => {
       const txt = bulletText(l).trim();
