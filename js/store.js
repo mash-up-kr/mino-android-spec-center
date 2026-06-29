@@ -1,212 +1,230 @@
 /**
- * MASC Store — 데이터 접근 추상화 계층
- * -------------------------------------------------------------
+ * MASC Store (v2) — 데이터 접근 추상화 계층
+ * ----------------------------------------------------------------------
  * UI(app.js)는 오직 이 계층을 통해서만 데이터에 접근한다.
- * v1: mock(window.MASC_*) + localStorage.
- * 추후: 이 파일의 auth/tracking 구현만 Firebase Auth/Firestore로 교체하면
- *       app.js 는 손대지 않아도 된다.
+ * mock-first: seed(window.MASC_SEED) + localStorage 오버레이.
+ * 이후 이 파일의 auth/features 구현만 Firebase Auth/Firestore로 교체하면
+ * app.js는 손대지 않는다 (docs/data-model.md · state-machine.md).
  */
 (function () {
-  const SESSION_KEY = 'masc.session';
-  const TRACKING_OVERRIDE_KEY = 'masc.tracking.overrides';
+  if (window.MASC) return; // Firebase 백엔드가 이미 설정됐으면 mock 비활성화
+  const SESSION_KEY = 'masc.v2.session';
+  const FEATURES_KEY = 'masc.v2.features';
+  const seed = window.MASC_SEED || { features: [], users: [], enums: {} };
 
-  // --- 팀 멤버 (추후 Firebase Auth 사용자로 대체) ---
-  const MEMBERS = [
-    { uid: 'jaesung', name: '재성', role: 'Android', email: 'jaesung@mino.team' },
-    { uid: 'eunseok', name: '은석', role: 'Android', email: 'eunseok@mino.team' },
-    { uid: 'yunji', name: '윤지', role: 'Android', email: 'yunji@mino.team' },
-    { uid: 'designer', name: '디자이너', role: 'Design', email: 'designer@mino.team' },
-  ];
+  const STATUS = seed.enums.status || [];
+  const today = () => new Date().toISOString().slice(0, 10);
 
-  // ===================== Auth (mock) =====================
+  // ===================== 저장소 =====================
+  function loadFeatures() {
+    try {
+      const raw = localStorage.getItem(FEATURES_KEY);
+      if (raw) return JSON.parse(raw);
+    } catch (_) { /* fallthrough */ }
+    // 최초: seed 깊은 복사
+    const init = JSON.parse(JSON.stringify(seed.features || []));
+    localStorage.setItem(FEATURES_KEY, JSON.stringify(init));
+    return init;
+  }
+  let store = loadFeatures();
+  function persist() { localStorage.setItem(FEATURES_KEY, JSON.stringify(store)); }
+  function idxOf(id) { return store.findIndex((f) => f.featureId === id); }
+
+  // ===================== Auth (mock GitHub) =====================
+  // 실연결: Firebase Auth(GitHub provider) + users/{uid}.role 로 교체.
   const auth = {
-    members() {
-      return MEMBERS.slice();
-    },
-    memberOf(uid) {
-      return MEMBERS.find((m) => m.uid === uid) || null;
-    },
+    users() { return (seed.users || []).slice(); },
+    userOf(uid) { return (seed.users || []).find((u) => u.uid === uid) || null; },
     currentUser() {
       const uid = localStorage.getItem(SESSION_KEY);
-      return uid ? this.memberOf(uid) : null;
+      return uid ? this.userOf(uid) : null;
     },
-    /** mock: 등록된 이메일 + 아무 비밀번호(1자 이상)면 성공 */
-    login(email, password) {
-      const member = MEMBERS.find((m) => m.email.toLowerCase() === String(email).trim().toLowerCase());
-      if (!member) return { ok: false, error: '등록되지 않은 이메일입니다.' };
-      if (!password) return { ok: false, error: '비밀번호를 입력하세요.' };
-      localStorage.setItem(SESSION_KEY, member.uid);
-      return { ok: true, user: member };
+    // mock: uid 선택 = GitHub 로그인 (role은 users 시드에서 결정)
+    loginAs(uid) {
+      if (!this.userOf(uid)) return { ok: false, error: '알 수 없는 사용자' };
+      localStorage.setItem(SESSION_KEY, uid);
+      return { ok: true, user: this.userOf(uid) };
     },
-    logout() {
-      localStorage.removeItem(SESSION_KEY);
-    },
+    logout() { localStorage.removeItem(SESSION_KEY); },
+    isDesigner() { const u = this.currentUser(); return !!u && u.role === 'designer'; },
+    isDeveloper() { const u = this.currentUser(); return !!u && u.role === 'developer'; },
+    // 통합 인터페이스(firebase 호환) — mock에선 즉시 호출
+    onAuthChange(cb) { cb(this.currentUser()); },
+    setRole() { return Promise.resolve({ ok: true }); }, // mock 역할은 seed 고정
   };
 
-  // ===================== Features (작성/편집 가능) =====================
-  // seed(window.MASC_FEATURE_LIST) 위에 draft(localStorage)를 얹는다.
-  // 추후 draft 저장소를 Firestore로 교체하면 된다.
-  const FEATURES_KEY = 'masc.features.drafts';
-  const seed = window.MASC_FEATURE_LIST || { features: [], modules: [], enums: {} };
-
-  function loadDrafts() {
-    try {
-      return JSON.parse(localStorage.getItem(FEATURES_KEY) || '{}');
-    } catch {
-      return {};
-    }
-  }
-  function saveDrafts(d) {
-    localStorage.setItem(FEATURES_KEY, JSON.stringify(d));
-  }
-  let drafts = loadDrafts();
-
-  const MODULE_NAMES = {};
-  (seed.modules || []).forEach((m) => { MODULE_NAMES[m.id] = m.name; });
-
-  // 구 모델(acceptanceCriteria / task.acs) → 신 모델(items / task.itemRefs) 하위호환
-  function migrate(f) {
-    if (!f) return f;
-    if (!Array.isArray(f.items)) {
-      f.items = Array.isArray(f.acceptanceCriteria)
-        ? f.acceptanceCriteria.map((ac, i) => ({
-            id: ac.id || ('ITEM_' + (i + 1)), title: '', trigger: '',
-            response: ac.text || '', specStatus: 'confirmed',
-          }))
-        : [];
-    }
-    (f.tasks || []).forEach((t) => {
-      if (!Array.isArray(t.itemRefs)) t.itemRefs = Array.isArray(t.acs) ? t.acs : [];
-    });
-    return f;
-  }
+  // ===================== Features =====================
+  const META = window.MASCSpec;
 
   const features = {
-    enums() {
-      return seed.enums || {};
-    },
-    /** seed.features + draft 을 id 기준으로 병합 (draft 우선) */
-    all() {
-      const map = new Map();
-      (seed.features || []).forEach((f) => map.set(f.id, f));
-      Object.values(drafts).forEach((f) => map.set(f.id, f));
-      return [...map.values()].map(migrate);
-    },
-    get(id) {
-      return migrate(drafts[id] || (seed.features || []).find((f) => f.id === id) || null);
-    },
-    /** 현재 feature들에서 모듈 목록을 동적으로 산출 (이름은 seed 기준, 없으면 id) */
-    modules() {
-      const ids = new Set((seed.modules || []).map((m) => m.id));
-      this.all().forEach((f) => { if (f.module) ids.add(f.module); });
-      return [...ids].map((id) => ({ id, name: MODULE_NAMES[id] || id }));
-    },
-    /** 빈 스펙 템플릿 */
+    enums() { return seed.enums || {}; },
+    meta() { return { project: seed.project, generatedAt: seed.generatedAt }; },
+    subscribe() { /* mock: 쓰기 후 app.js가 직접 renderAll (no-op) */ },
+    all() { return JSON.parse(JSON.stringify(store)); },
+    get(id) { const i = idxOf(id); return i < 0 ? null : JSON.parse(JSON.stringify(store[i])); },
+
     blank() {
       return {
-        id: '', title: '', module: '', type: 'Screen', trigger: '', behavior: '',
-        designRef: { figmaNode: '', url: '' },
-        items: [], tbds: [], tasks: [], relatedFeatures: [],
-        nonGoals: [], states: [],
-        planMd: '', tasksMd: '',
-        sources: { spec: '', plan: '', tasks: '' },
-        origin: 'draft',
+        featureId: '', slug: '', title: '', status: 'spec_draft',
+        planStale: false, specVersion: '', figmaSources: [],
+        prNumber: null, prUrl: null, specBody: '', planBody: null,
+        assets: [], reviews: [], createdBy: '', createdAt: today(), updatedAt: today(),
       };
     },
-    /** draft 저장(생성/수정 공통) */
-    save(feature) {
-      drafts[feature.id] = Object.assign({ origin: 'draft' }, feature);
-      saveDrafts(drafts);
-      return drafts[feature.id];
+
+    /** spec 업로드/생성 또는 수정. validate는 app.js(UI)에서 선행. */
+    saveSpec(input) {
+      // input: { featureId?, specBody, figmaSources?, assets? }
+      const m = META.parseMeta(input.specBody);
+      const id = input.featureId || m.slug;
+      if (!id) return { ok: false, error: 'slug를 찾지 못했습니다.' };
+      const me = auth.currentUser();
+      const i = idxOf(id);
+
+      if (i < 0) {
+        // 신규 생성 → spec_draft
+        const f = Object.assign(this.blank(), {
+          featureId: id, slug: m.slug, title: m.title || id,
+          specVersion: m.specVersion || '', specBody: input.specBody,
+          figmaSources: input.figmaSources || [], assets: input.assets || [],
+          createdBy: me ? me.uid : '', status: 'spec_draft',
+        });
+        store.push(f); persist();
+        return { ok: true, feature: this.get(id), created: true };
+      }
+
+      // 기존 수정 — 무효화 연쇄 판단
+      const f = store[i];
+      const wasApprovedOrLater = ['spec_approved', 'plan_drafted', 'pr_open'].includes(f.status);
+      f.slug = m.slug || f.slug;
+      f.title = m.title || f.title;
+      f.specVersion = m.specVersion || f.specVersion;
+      f.specBody = input.specBody;
+      if (input.figmaSources) f.figmaSources = input.figmaSources;
+      if (input.assets) f.assets = input.assets;
+      f.updatedAt = today();
+
+      let invalidated = false;
+      if (wasApprovedOrLater) {
+        // 무효화: spec_draft 복귀 + planStale + 열린 PR 자동 close
+        f.status = 'spec_draft';
+        f.planStale = true;
+        if (f.prNumber) {
+          f.reviews = f.reviews || [];
+          // 실연결: createSpecPR가 연 PR을 close + 새 버전 링크 코멘트
+          f._prAutoClosedAt = today();
+        }
+        invalidated = true;
+      } else if (f.status === 'spec_changes_requested') {
+        // 반려 후 수정은 draft로 되돌릴 필요 없음(재요청 가능) — 상태 유지
+      }
+      persist();
+      return { ok: true, feature: this.get(id), invalidated };
     },
-    isDraft(id) {
-      return Object.prototype.hasOwnProperty.call(drafts, id);
+
+    /** plan 붙여넣기 (spec_approved 후) → plan_drafted */
+    savePlan(id, planBody) {
+      const i = idxOf(id);
+      if (i < 0) return { ok: false, error: 'feature 없음' };
+      const f = store[i];
+      if (!['spec_approved', 'plan_drafted'].includes(f.status)) {
+        return { ok: false, error: 'plan은 spec 승인(spec_approved) 후에만 작성할 수 있습니다.' };
+      }
+      f.planBody = planBody;
+      f.planStale = false;
+      if (f.status === 'spec_approved') f.status = 'plan_drafted';
+      f.updatedAt = today();
+      persist();
+      return { ok: true, feature: this.get(id) };
     },
-    meta() {
-      return { project: seed.project, generatedAt: seed.generatedAt };
+
+    // ---------- 상태 전이 (state-machine.md) ----------
+    /** 컨펌 요청: spec_draft|spec_changes_requested → spec_in_review (개발자) */
+    requestReview(id) {
+      const i = idxOf(id); if (i < 0) return { ok: false, error: 'feature 없음' };
+      if (!auth.isDeveloper()) return { ok: false, error: '개발자만 컨펌 요청 가능' };
+      const f = store[i];
+      if (!['spec_draft', 'spec_changes_requested'].includes(f.status)) {
+        return { ok: false, error: `현재 상태(${f.status})에서는 컨펌 요청 불가` };
+      }
+      f.status = 'spec_in_review'; f.updatedAt = today(); persist();
+      return { ok: true, feature: this.get(id) };
+    },
+
+    /** 디자이너 승인 → spec_approved */
+    approve(id) {
+      const i = idxOf(id); if (i < 0) return { ok: false, error: 'feature 없음' };
+      if (!auth.isDesigner()) return { ok: false, error: '디자이너만 승인 가능' };
+      const f = store[i];
+      if (f.status !== 'spec_in_review') return { ok: false, error: '검토 중 상태가 아닙니다.' };
+      f.status = 'spec_approved';
+      f.reviews.push(review('approved', []));
+      f.updatedAt = today(); persist();
+      return { ok: true, feature: this.get(id) };
+    },
+
+    /** 디자이너 반려 + 코멘트 → spec_changes_requested */
+    requestChanges(id, comments) {
+      const i = idxOf(id); if (i < 0) return { ok: false, error: 'feature 없음' };
+      if (!auth.isDesigner()) return { ok: false, error: '디자이너만 반려 가능' };
+      const list = (comments || []).filter((c) => c && c.body && c.body.trim());
+      if (!list.length) return { ok: false, error: '반려 시 코멘트가 1개 이상 필요합니다.' };
+      const f = store[i];
+      if (f.status !== 'spec_in_review') return { ok: false, error: '검토 중 상태가 아닙니다.' };
+      f.status = 'spec_changes_requested';
+      f.reviews.push(review('changes_requested', list));
+      f.updatedAt = today(); persist();
+      return { ok: true, feature: this.get(id) };
+    },
+
+    /** 추가 코멘트 (상태 변화 없음). 반려됨/검토중에서 디자이너가 보충 코멘트. decision='comment' */
+    addComments(id, comments) {
+      const i = idxOf(id); if (i < 0) return { ok: false, error: 'feature 없음' };
+      if (!auth.isDesigner()) return { ok: false, error: '디자이너만 코멘트 가능' };
+      const list = (comments || []).filter((c) => c && c.body && c.body.trim());
+      if (!list.length) return { ok: false, error: '코멘트가 1개 이상 필요합니다.' };
+      const f = store[i];
+      if (!['spec_changes_requested', 'spec_in_review'].includes(f.status)) {
+        return { ok: false, error: '코멘트를 추가할 수 있는 상태가 아닙니다.' };
+      }
+      f.reviews.push(review('comment', list));
+      f.updatedAt = today(); persist();
+      return { ok: true, feature: this.get(id) };
+    },
+
+    /** PR 생성 (plan_drafted → pr_open). mock: stub PR 정보. 실연결: createSpecPR. */
+    createPr(id) {
+      const i = idxOf(id); if (i < 0) return { ok: false, error: 'feature 없음' };
+      if (!auth.isDeveloper()) return { ok: false, error: '개발자만 PR 생성 가능' };
+      const f = store[i];
+      if (f.status !== 'plan_drafted') return { ok: false, error: 'plan 작성(plan_drafted) 후에만 PR 생성 가능' };
+      const n = 100 + Math.floor(Math.random() * 900); // stub
+      f.status = 'pr_open';
+      f.prNumber = n;
+      f.prUrl = `https://github.com/mash-up-kr/Team-MINO-Android/pull/${n}`;
+      f.updatedAt = today(); persist();
+      return { ok: true, feature: this.get(id), stub: true };
+    },
+
+    /** Webhook 역동기화 (mock: 수동 트리거). merged | pr_closed */
+    syncFromWebhook(id, kind) {
+      const i = idxOf(id); if (i < 0) return { ok: false, error: 'feature 없음' };
+      const f = store[i];
+      if (f.status !== 'pr_open') return { ok: false, error: 'PR 열림 상태가 아닙니다.' };
+      f.status = kind === 'merged' ? 'merged' : 'pr_closed';
+      f.updatedAt = today(); persist();
+      return { ok: true, feature: this.get(id) };
     },
   };
 
-  // ===================== Tracking (mock + localStorage) =====================
-  function loadOverrides() {
-    try {
-      return JSON.parse(localStorage.getItem(TRACKING_OVERRIDE_KEY) || '{}');
-    } catch {
-      return {};
-    }
-  }
-  function saveOverrides(o) {
-    localStorage.setItem(TRACKING_OVERRIDE_KEY, JSON.stringify(o));
-  }
-
-  const base = window.MASC_TRACKING || {};
-  const overrides = loadOverrides();
-
-  function defaults() {
+  function review(decision, comments) {
+    const me = auth.currentUser();
     return {
-      specStatus: 'Draft',
-      deliveryStatus: 'NotStarted',
-      assignee: '',
-      branch: '',
-      prUrl: '',
-      prNumber: null,
-      prState: 'none', // none | open | merged — 확정 PR 생명주기
-      issueNumber: null, // feature/<issue>-<slug> · Closes #N 규칙용
-      publishedAt: '', // PR 머지(=코드 안착) 시각
-      evidence: [],
-      blockedReason: '',
-      tasksDone: {}, // { taskId: true } — 태스크 체크리스트 완료 여부 (live 추적)
-      updatedAt: '',
-      updatedBy: '',
+      reviewId: 'r' + Date.now(),
+      decision, comments: comments || [],
+      reviewerUid: me ? me.uid : '', reviewedAt: today(),
     };
   }
 
-  const tracking = {
-    get(featureId) {
-      return Object.assign(defaults(), base[featureId] || {}, overrides[featureId] || {});
-    },
-    /** 단일 필드 변경 → localStorage 반영 (추후 Firestore write로 교체) */
-    update(featureId, patch) {
-      const cur = overrides[featureId] || {};
-      const me = auth.currentUser();
-      overrides[featureId] = Object.assign({}, cur, patch, {
-        updatedBy: me ? me.uid : '',
-        updatedAt: new Date().toISOString().slice(0, 10),
-      });
-      saveOverrides(overrides);
-      return this.get(featureId);
-    },
-    setAssignee(featureId, uid) {
-      return this.update(featureId, { assignee: uid });
-    },
-    setSpecStatus(featureId, status) {
-      return this.update(featureId, { specStatus: status });
-    },
-    setDeliveryStatus(featureId, status) {
-      return this.update(featureId, { deliveryStatus: status });
-    },
-    toggleTask(featureId, taskId, done) {
-      const cur = this.get(featureId).tasksDone || {};
-      const next = Object.assign({}, cur);
-      if (done) next[taskId] = true; else delete next[taskId];
-      return this.update(featureId, { tasksDone: next });
-    },
-    /**
-     * 확정된 feature에 대해 Android 레포 PR을 연다.
-     * Phase 0: stub(mock prNumber). Phase 2에서 GitHub App 봇 호출로 교체 예정.
-     * info = { prNumber, prUrl, branch, issueNumber }
-     */
-    openPr(featureId, info = {}) {
-      return this.update(featureId, Object.assign({ prState: 'open' }, info));
-    },
-    /** PR 머지 감지(Phase 3 웹훅) → published. Phase 0에선 수동/테스트용. */
-    markMerged(featureId) {
-      return this.update(featureId, {
-        prState: 'merged',
-        publishedAt: new Date().toISOString().slice(0, 10),
-      });
-    },
-  };
-
-  window.MASC = { auth, features, tracking };
+  window.MASC = { auth, features, STATUS, BACKEND: 'mock' };
 })();

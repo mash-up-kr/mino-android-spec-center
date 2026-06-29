@@ -1,16 +1,4 @@
----
-id: 005-now-openchat
-title: 지금 - 오픈채팅 목록
-module: feature:now
-type: Screen
-trigger: "지금" 탭의 오픈채팅 세그먼트 진입
-figmaNode: 2001-0001
-figmaUrl: https://www.figma.com/design/xxxx?node-id=2001-0001
-figmaSection: 2001:0001 지금 / 오픈채팅
-specVersion: v0.1.0
-related: 006-now-shorts
----
-
+<!-- feature: now-openchat -->
 # 지금 - 오픈채팅 목록
 
 ## 1. 한눈에 보기
@@ -26,10 +14,10 @@ related: 006-now-shorts
 
 | 상태 | 설명 | 이미지 |
 |---|---|---|
-| 기본 진입 | 참여 방이 있을 때의 기본 목록. 핀 고정 최상단, 그 외 마지막 메시지 시각 내림차순 | ![](https://figma.com/.../2001-0001.png) |
-| 로딩 | 목록 로드 중 스켈레톤 리스트 표시 | ![](https://figma.com/.../2001-0002.png) |
-| 빈 상태 | 참여 방 0개일 때 안내 문구 + "오픈채팅 탐색" 버튼 | ![](https://figma.com/.../2001-0003.png) |
-| 에러 | 로드 실패 시 에러 메시지 + 재시도 버튼 | ![](https://figma.com/.../2001-0004.png) |
+| 기본 진입 | 참여 방이 있을 때의 기본 목록. 핀 고정 최상단, 그 외 마지막 메시지 시각 내림차순 | ![](assets/2001-0001.png) |
+| 로딩 | 목록 로드 중 스켈레톤 리스트 표시 | ![](assets/2001-0002.png) |
+| 빈 상태 | 참여 방 0개일 때 안내 문구 + "오픈채팅 탐색" 버튼 | ![](assets/2001-0003.png) |
+| 에러 | 로드 실패 시 에러 메시지 + 재시도 버튼 | ![](assets/2001-0004.png) |
 
 ## 3. 핵심 UX 규칙
 
@@ -54,21 +42,21 @@ related: 006-now-shorts
 ### 5.1 목록
 | ID | 기능 | Trigger | 화면 반응 | interactionType | 확정 | 이미지 |
 |---|---|---|---|---|---|---|
-| LIST_LOAD | 목록 로드 | 오픈채팅 세그먼트 진입 | 참여 방 목록을 1초 이내 표시, 실패 시 재시도 UI | async_process | confirmed | ![](https://figma.com/.../list-load.png) |
-| LIST_SORT | 정렬 규칙 | 목록 렌더 시 | 핀 고정 최상단, 그 외 마지막 메시지 시각 내림차순 | display_state | confirmed | ![](https://figma.com/.../list-sort.png) |
-| ROOM_ENTER | 채팅방 진입 | 방 항목 탭 | 해당 오픈채팅방으로 이동 | navigation | confirmed | ![](https://figma.com/.../room-enter.png) |
-| LIST_EMPTY | 빈 상태 | 참여 방 0개 | 안내 문구 + "오픈채팅 탐색" 버튼 표시 | display_state | confirmed | ![](https://figma.com/.../list-empty.png) |
+| LIST_LOAD | 목록 로드 | 오픈채팅 세그먼트 진입 | 참여 방 목록을 1초 이내 표시, 실패 시 재시도 UI | async_process | confirmed | ![](assets/list-load.png) |
+| LIST_SORT | 정렬 규칙 | 목록 렌더 시 | 핀 고정 최상단, 그 외 마지막 메시지 시각 내림차순 | display_state | confirmed | ![](assets/list-sort.png) |
+| ROOM_ENTER | 채팅방 진입 | 방 항목 탭 | 해당 오픈채팅방으로 이동 | navigation | confirmed | ![](assets/room-enter.png) |
+| LIST_EMPTY | 빈 상태 | 참여 방 0개 | 안내 문구 + "오픈채팅 탐색" 버튼 표시 | display_state | confirmed | ![](assets/list-empty.png) |
 
 ### 5.2 안읽음
 | ID | 기능 | Trigger | 화면 반응 | interactionType | 확정 | 이미지 |
 |---|---|---|---|---|---|---|
-| UNREAD_CAP | 안읽음 카운트 표기 | 안읽음 수 300 초과 | 안읽음 카운트를 "300+"로 표기 | display_state | confirmed | ![](https://figma.com/.../unread-cap.png) |
-| TAB_UNREAD_BADGE | 탭 합산 뱃지 | 오픈채팅 탭 표시 시 | 전체 방 안읽음 합산을 탭 뱃지로 표시 | display_state | partial | |
+| UNREAD_CAP | 안읽음 카운트 표기 | 안읽음 수 300 초과 | 안읽음 카운트를 "300+"로 표기 | display_state | confirmed | ![](assets/unread-cap.png) |
+| TAB_UNREAD_BADGE | 탭 합산 뱃지 | 오픈채팅 탭 표시 시 | 전체 방 안읽음 합산을 탭 뱃지로 표시 | display_state | partial | ![](assets/tab-badge.png) |
 
 ### 5.3 실시간
 | ID | 기능 | Trigger | 화면 반응 | interactionType | 확정 | 이미지 |
 |---|---|---|---|---|---|---|
-| NEW_MESSAGE_BUMP | 신규 메시지 수신 | 새 메시지 수신 | 해당 방을 목록 상단으로 이동하고 안읽음 +1 | display_state | needs_policy | |
+| NEW_MESSAGE_BUMP | 신규 메시지 수신 | 새 메시지 수신 | 해당 방을 목록 상단으로 이동하고 안읽음 +1 | display_state | needs_policy | ![](assets/new-message-bump.png) |
 
 ## 비목표
 

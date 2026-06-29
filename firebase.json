@@ -1,0 +1,13 @@
+{
+  "//": "정적 호스팅은 GitHub Pages 사용(PRD 5장). Firebase는 Firestore/Storage/Functions만.",
+  "firestore": {
+    "rules": "firestore.rules"
+  },
+  "storage": {
+    "rules": "storage.rules"
+  },
+  "functions": {
+    "source": "functions",
+    "runtime": "nodejs20"
+  }
+}

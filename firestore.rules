@@ -1,0 +1,46 @@
+rules_version = '2';
+// MASC Firestore 보안규칙 — docs/data-model.md §3
+// 1차 가드(role·검토중 잠금). 민감 전이(PR/Webhook)는 Functions(Admin SDK, 규칙 우회)가 2차.
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    function signedIn() { return request.auth != null; }
+    function myRole() {
+      return get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role;
+    }
+    function isDeveloper() { return signedIn() && myRole() == 'developer'; }
+    function isDesigner()  { return signedIn() && myRole() == 'designer'; }
+
+    // 사용자 프로필 — 본인만 작성, 로그인 사용자는 읽기(리뷰어 이름 표시용)
+    match /users/{uid} {
+      allow read: if signedIn();
+      allow create, update: if request.auth.uid == uid;
+      allow delete: if false;
+    }
+
+    match /features/{featureId} {
+      allow read: if signedIn();
+
+      // 생성: 개발자, 본인 명의, 초기 상태 spec_draft
+      allow create: if isDeveloper()
+        && request.resource.data.createdBy == request.auth.uid
+        && request.resource.data.status == 'spec_draft';
+
+      // 수정:
+      //  - 개발자는 검토중(spec_in_review)이 아닐 때만 (= 검토중 read-only 잠금)
+      //  - 디자이너는 검토중/반려됨 상태에서만 (승인/반려/보충 코멘트 전이)
+      allow update: if
+        (isDeveloper() && resource.data.status != 'spec_in_review')
+        || (isDesigner() && resource.data.status in ['spec_in_review', 'spec_changes_requested']);
+
+      allow delete: if false;
+
+      // 컨펌 이력 — 디자이너만 추가, 누구나 읽기, 수정/삭제 불가
+      match /reviews/{reviewId} {
+        allow read: if signedIn();
+        allow create: if isDesigner();
+        allow update, delete: if false;
+      }
+    }
+  }
+}

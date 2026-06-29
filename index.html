@@ -4,25 +4,33 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>MASC · Mino Android Spec Center</title>
-  <link rel="stylesheet" href="styles.css?v=3" />
+  <link rel="stylesheet" href="styles.css?v=6" />
 </head>
 <body>
-  <!-- ===================== Login ===================== -->
+  <!-- 부팅 에러를 빈 화면 대신 표면화 -->
+  <script>
+    window.addEventListener('error', function (e) {
+      var el = document.getElementById('boot-error') || (function () {
+        var d = document.createElement('div'); d.id = 'boot-error';
+        d.style.cssText = 'position:fixed;z-index:9999;left:0;right:0;top:0;padding:12px 16px;background:#dc2626;color:#fff;font:13px/1.5 monospace;white-space:pre-wrap';
+        document.body.appendChild(d); return d;
+      })();
+      el.textContent = '⚠ 부팅 오류: ' + (e.message || e.error) + '\n' + ((e.filename || '') + ':' + (e.lineno || ''));
+    });
+  </script>
+
+  <!-- ===================== Login (GitHub mock) ===================== -->
   <div id="login" class="login-overlay">
-    <form class="login-card" id="login-form">
+    <div class="login-card">
       <div class="brand">
         <div class="logo-badge">M</div>
         <h1>MASC</h1>
       </div>
       <p>민호야 잘하자 · 안드로이드 팀 스펙 센터</p>
-      <label for="email">이메일</label>
-      <input id="email" type="email" placeholder="name@mino.team" autocomplete="username" />
-      <label for="password">비밀번호</label>
-      <input id="password" type="password" placeholder="비밀번호" autocomplete="current-password" />
-      <button type="submit" class="btn-primary">로그인</button>
-      <div class="login-error" id="login-error"></div>
-      <div class="login-hint">v1 mock · 예) jaesung@mino.team / 아무 비밀번호</div>
-    </form>
+      <div class="login-hint">v2 mock · 실연결 시 GitHub 로그인으로 교체됩니다.</div>
+      <div class="lbl" style="margin-top:14px">GitHub 계정으로 로그인</div>
+      <div id="login-users" class="login-users"></div>
+    </div>
   </div>
 
   <!-- ===================== App ===================== -->
@@ -35,6 +43,7 @@
           <span id="meta-line">Team-MINO-Android</span>
         </div>
         <div class="spacer"></div>
+        <button class="btn-ghost" id="btn-skill">스킬 안내</button>
         <button class="btn-ghost" id="btn-legend">상태 안내</button>
         <button class="btn-ghost" id="btn-reset">필터 초기화</button>
         <div class="user-chip" id="user-chip"></div>
@@ -48,31 +57,15 @@
       <aside class="panel">
         <div class="panel-b">
           <div class="side-section">
-            <div class="lbl">모듈</div>
-            <div id="module-list"></div>
-          </div>
-          <div class="side-section">
-            <div class="lbl">필터</div>
-            <div class="filter-group">
-              <label>스펙 상태</label>
-              <select id="f-spec"></select>
-            </div>
-            <div class="filter-group">
-              <label>작업 상태</label>
-              <select id="f-delivery"></select>
-            </div>
-            <div class="filter-group">
-              <label>작업자</label>
-              <select id="f-assignee"></select>
-            </div>
+            <div class="lbl">파이프라인 상태</div>
+            <div id="status-list"></div>
           </div>
           <div class="side-section">
             <div class="lbl">빠른 필터</div>
             <div class="chips" id="quick-filters">
-              <button class="chip" data-q="unassigned">미할당</button>
-              <button class="chip" data-q="tbd">TBD 있음</button>
-              <button class="chip" data-q="blocked">Blocked</button>
+              <button class="chip" data-q="planStale">plan 오래됨</button>
               <button class="chip" data-q="pr">PR 연결</button>
+              <button class="chip" data-q="mine">내 담당</button>
             </div>
           </div>
         </div>
@@ -81,12 +74,8 @@
       <!-- Center -->
       <main class="panel">
         <div class="toolbar">
-          <input class="search" id="search" type="text" placeholder="Feature 검색 (제목 / ID / 모듈)" />
-          <div class="view-toggle">
-            <button id="view-table" class="active">표</button>
-            <button id="view-board">보드</button>
-          </div>
-          <button class="btn-primary" id="btn-new">+ 새 스펙</button>
+          <input class="search" id="search" type="text" placeholder="Feature 검색 (제목 / slug)" />
+          <button class="btn-primary" id="btn-new">+ 새 스펙 업로드</button>
         </div>
         <div id="center-body"></div>
       </main>
@@ -101,35 +90,114 @@
     <div id="legend-modal" class="modal-overlay hidden">
       <div class="modal-card">
         <div class="modal-head">
-          <h2>상태 안내</h2>
-          <button class="modal-close" id="legend-close" aria-label="닫기">×</button>
+          <h2>파이프라인 상태 안내</h2>
+          <button class="modal-close" data-close="legend-modal" aria-label="닫기">×</button>
         </div>
         <div class="modal-body" id="legend-body"></div>
       </div>
     </div>
 
-    <!-- 스펙 편집기 모달 -->
-    <div id="editor-modal" class="modal-overlay hidden">
+    <!-- 스킬 안내 모달 -->
+    <div id="skill-modal" class="modal-overlay hidden">
+      <div class="modal-card">
+        <div class="modal-head">
+          <h2>로컬 생성 스킬 사용법</h2>
+          <button class="modal-close" data-close="skill-modal" aria-label="닫기">×</button>
+        </div>
+        <div class="modal-body" id="skill-body"></div>
+      </div>
+    </div>
+
+    <!-- 업로드 모달 (spec drag-drop + 검증) -->
+    <div id="upload-modal" class="modal-overlay hidden">
       <div class="modal-card modal-wide">
         <div class="modal-head">
-          <h2 id="editor-title">새 스펙</h2>
-          <button class="modal-close" id="editor-close" aria-label="닫기">×</button>
+          <h2 id="upload-title">새 스펙 업로드</h2>
+          <button class="modal-close" data-close="upload-modal" aria-label="닫기">×</button>
         </div>
-        <div class="modal-body" id="editor-body"></div>
+        <div class="modal-body" id="upload-body"></div>
         <div class="modal-foot">
-          <span class="editor-msg" id="editor-msg"></span>
+          <span class="editor-msg" id="upload-msg"></span>
           <div class="spacer"></div>
-          <button class="btn-ghost" id="editor-cancel">취소</button>
-          <button class="btn-primary" id="editor-save">저장</button>
+          <button class="btn-ghost" data-close="upload-modal">취소</button>
+          <button class="btn-primary" id="upload-save">저장</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- plan 붙여넣기 모달 -->
+    <div id="plan-modal" class="modal-overlay hidden">
+      <div class="modal-card modal-wide">
+        <div class="modal-head">
+          <h2 id="plan-title">plan 붙여넣기</h2>
+          <button class="modal-close" data-close="plan-modal" aria-label="닫기">×</button>
+        </div>
+        <div class="modal-body" id="plan-body"></div>
+        <div class="modal-foot">
+          <span class="editor-msg" id="plan-msg"></span>
+          <div class="spacer"></div>
+          <button class="btn-ghost" data-close="plan-modal">취소</button>
+          <button class="btn-primary" id="plan-save">저장</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- 문서 보기 모달 (spec/plan) — 디자이너·검토중이면 리뷰 모드 -->
+    <div id="doc-modal" class="modal-overlay hidden">
+      <div class="modal-card modal-xwide">
+        <div class="modal-head">
+          <h2 id="doc-modal-title">문서</h2>
+          <span id="doc-review-hint" class="review-hint hidden">리뷰 모드 · 제목 옆 💬로 코멘트를 답니다</span>
+          <button class="modal-close" data-close="doc-modal" aria-label="닫기">×</button>
+        </div>
+        <div class="modal-body md" id="doc-modal-body"></div>
+        <div class="modal-foot hidden" id="doc-foot">
+          <span class="editor-msg" id="doc-msg"></span>
+          <span class="review-count" id="doc-review-count">코멘트 0</span>
+          <div class="spacer"></div>
+          <button class="btn-ghost danger" id="doc-reject">반려 제출</button>
+          <button class="btn-primary" id="doc-approve">승인</button>
         </div>
       </div>
     </div>
   </div>
 
-  <script src="data/feature-list.js"></script>
-  <script src="data/tracking.js"></script>
-  <script src="js/store.js"></script>
-  <script src="js/spec-parse.js"></script>
-  <script src="js/app.js"></script>
+  <!-- 온보딩 (첫 로그인 역할 선택) — #app 밖에 둬서 app이 숨겨져도 표시됨 -->
+  <div id="onboard-modal" class="modal-overlay hidden">
+    <div class="modal-card">
+      <div class="modal-head"><h2>역할 선택</h2></div>
+      <div class="modal-body">
+        <p class="desc">처음 로그인하셨네요. 역할을 선택하세요. (이후 변경은 관리자 문의)</p>
+        <div class="login-users">
+          <button class="login-user" id="onboard-dev">
+            <span class="avatar">D</span><span class="lu-name">개발자</span>
+            <span class="lu-role developer">developer</span>
+            <span class="lu-gh">spec 작성·plan·PR</span>
+          </button>
+          <button class="login-user" id="onboard-designer">
+            <span class="avatar">D</span><span class="lu-name">디자이너</span>
+            <span class="lu-role designer">designer</span>
+            <span class="lu-gh">spec 승인·반려·코멘트</span>
+          </button>
+        </div>
+        <div class="editor-msg" id="onboard-msg"></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Firebase SDK (compat) — enabled:true 일 때 store-firebase.js 가 사용 -->
+  <script src="https://www.gstatic.com/firebasejs/10.12.5/firebase-app-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/10.12.5/firebase-auth-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/10.12.5/firebase-firestore-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/10.12.5/firebase-storage-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/10.12.5/firebase-functions-compat.js"></script>
+
+  <script src="js/firebase-config.js?v=7"></script>
+  <script src="data/seed.js?v=4"></script>
+  <script src="js/spec-parse.js?v=4"></script>
+  <script src="js/validate.js?v=4"></script>
+  <script src="js/store-firebase.js?v=7"></script>
+  <script src="js/store.js?v=7"></script>
+  <script src="js/app.js?v=7"></script>
 </body>
 </html>

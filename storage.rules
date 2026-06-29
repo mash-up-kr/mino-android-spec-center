@@ -1,0 +1,20 @@
+rules_version = '2';
+// MASC Storage 보안규칙 — docs/data-model.md §2,§3
+// spec 화면 이미지: features/{featureId}/assets/{file}
+service firebase.storage {
+  match /b/{bucket}/o {
+    function signedIn() { return request.auth != null; }
+    function myRole() {
+      return firestore.get(/databases/(default)/documents/users/$(request.auth.uid)).data.role;
+    }
+    function isDeveloper() { return signedIn() && myRole() == 'developer'; }
+
+    match /features/{featureId}/assets/{fileName} {
+      allow read: if signedIn();
+      // 업로드: 개발자, 이미지, 10MB 이하
+      allow write: if isDeveloper()
+        && request.resource.size < 10 * 1024 * 1024
+        && request.resource.contentType.matches('image/.*');
+    }
+  }
+}

@@ -1,0 +1,19 @@
+{
+  "name": "mino-spec-center-functions",
+  "description": "MASC Cloud Functions — GitHub OAuth 교환 / PR 생성 / Webhook 역동기화",
+  "private": true,
+  "engines": {
+    "node": "20"
+  },
+  "main": "index.js",
+  "scripts": {
+    "serve": "firebase emulators:start --only functions",
+    "deploy": "firebase deploy --only functions",
+    "logs": "firebase functions:log"
+  },
+  "dependencies": {
+    "@octokit/rest": "^21.0.0",
+    "firebase-admin": "^12.6.0",
+    "firebase-functions": "^6.1.0"
+  }
+}
