@@ -1,992 +1,646 @@
 /**
- * MASC app — UI 렌더링 & 상호작용
- * 데이터는 전부 window.MASC(store.js)를 통해서만 접근한다.
+ * MASC app (v2) — UI 렌더링 & 상호작용
+ * 데이터는 전부 window.MASC(store.js)를 통해서만 접근.
+ * 파이프라인 상태머신: docs/state-machine.md · 검증: docs/validation.md
  */
 (function () {
-  const { auth, features, tracking } = window.MASC;
+  const { auth, features } = window.MASC;
+  const V = window.MASCValidate;
+  const FB = window.MASC.BACKEND === 'firebase';
 
-  // ---------- 상태 라벨/색상 ----------
-  const SPEC_LABEL = { Draft: '초안', Clarify: '확인필요', Confirmed: '확정' };
-  const DELIVERY_LABEL = {
-    NotStarted: '미시작', Ready: '준비됨', InProgress: '진행중',
-    Review: '리뷰', Verified: '검증완료', Blocked: '막힘',
+  // ---------- 상태 라벨/색상/설명 ----------
+  const STATUS_LABEL = {
+    spec_draft: '작성중', spec_in_review: '검토중', spec_changes_requested: '반려됨',
+    spec_approved: '승인됨', plan_drafted: 'plan 작성', pr_open: 'PR 열림',
+    merged: '머지됨', pr_closed: 'PR 종료',
   };
-  const SPEC_COLOR = { Draft: 'gray', Clarify: 'amber', Confirmed: 'green' };
-  const DELIVERY_COLOR = {
-    NotStarted: 'gray', Ready: 'blue', InProgress: 'blue',
-    Review: 'amber', Verified: 'green', Blocked: 'red',
+  const STATUS_COLOR = {
+    spec_draft: 'gray', spec_in_review: 'amber', spec_changes_requested: 'red',
+    spec_approved: 'green', plan_drafted: 'blue', pr_open: 'blue',
+    merged: 'green', pr_closed: 'gray',
   };
-  const SPEC_DESC = {
-    Draft: 'spec.md를 막 작성한 단계. 미해결 결정(TBD)이 남아있을 수 있음.',
-    Clarify: '미해결 결정(TBD)이 있어 기획·디자이너·서버와 합의가 필요.',
-    Confirmed: 'TBD가 모두 닫히고 plan/tasks까지 나와 구현을 시작해도 되는 상태.',
-  };
-  const DELIVERY_DESC = {
-    NotStarted: '아직 착수 전. 할당 전이거나 스펙 확정 대기.',
-    Ready: '스펙 확정 + 작업자 할당 완료. 착수 가능.',
-    InProgress: '담당자가 구현 중 (브랜치 생성·커밋 진행).',
-    Review: 'PR이 올라가 코드 리뷰 / QA 대기 중.',
-    Verified: '머지 + 수용조건(AC)·근거(스크린샷/테스트) 확인 완료.',
-    Blocked: '외부 의존(서버 API·디자인 확정·TBD 미해소)으로 진행 불가.',
-  };
-  const ITEM_STATUS = ['confirmed', 'partial', 'needs_policy', 'inferred', 'variant', 'out_of_scope'];
-  const ITEM_LABEL = {
-    confirmed: '확정', partial: '일부확정', needs_policy: '정책필요',
-    inferred: '추론', variant: '후보안', out_of_scope: '범위외',
-  };
-  const ITEM_COLOR = {
-    confirmed: 'green', partial: 'amber', needs_policy: 'red',
-    inferred: 'blue', variant: 'gray', out_of_scope: 'gray',
+  const STATUS_DESC = {
+    spec_draft: 'spec 작성/수정 중 (초기). 개발자 편집 가능.',
+    spec_in_review: '디자이너 검토 중. spec read-only 잠금.',
+    spec_changes_requested: '디자이너가 반려. 개발자가 수정 후 재요청.',
+    spec_approved: 'spec 컨펌 완료. plan 작성 잠금 해제.',
+    plan_drafted: 'plan 작성 완료. PR 생성 준비.',
+    pr_open: '문서 PR 열림. Webhook 머지/종료 대기.',
+    merged: '머지 완료 — 구현 단계로 종료.',
+    pr_closed: 'PR 미머지 종료.',
   };
 
-  // ---------- 화면 상태 ----------
-  const state = {
-    module: 'all',
-    spec: 'all',
-    delivery: 'all',
-    assignee: 'all',
-    quick: new Set(),
-    search: '',
-    view: 'table',
-    selectedId: null,
+  // 파이프라인 스텝퍼 (직선 흐름)
+  const STEPS = [
+    { key: 'spec_draft', label: 'spec 작성' },
+    { key: 'spec_in_review', label: '검토' },
+    { key: 'spec_approved', label: '승인' },
+    { key: 'plan_drafted', label: 'plan' },
+    { key: 'pr_open', label: 'PR' },
+    { key: 'merged', label: '머지' },
+  ];
+  const STEP_INDEX = {
+    spec_draft: 0, spec_changes_requested: 0, spec_in_review: 1,
+    spec_approved: 2, plan_drafted: 3, pr_open: 4, merged: 5, pr_closed: 4,
   };
 
+  const state = { status: 'all', quick: new Set(), search: '', selectedId: null };
   const $ = (sel) => document.querySelector(sel);
-  const memberName = (uid) => {
-    const m = auth.memberOf(uid);
-    return m ? m.name : '';
-  };
-  const initials = (name) => (name ? name.slice(0, 1) : '?');
+  const esc = (s) => String(s == null ? '' : s).replace(/&/g, '&amp;').replace(/</g, '&lt;');
+  const userName = (uid) => { const u = auth.userOf(uid); return u ? u.name : (uid || ''); };
   const badge = (text, color, title) =>
-    `<span class="badge ${color}"${title ? ` title="${title}"` : ''}>${text}</span>`;
-  const specBadge = (s) => badge(SPEC_LABEL[s] || s, SPEC_COLOR[s] || 'gray', SPEC_DESC[s]);
-  const deliveryBadge = (s) => badge(DELIVERY_LABEL[s] || s, DELIVERY_COLOR[s] || 'gray', DELIVERY_DESC[s]);
-  const itemBadge = (s) => badge(ITEM_LABEL[s] || s || 'confirmed', ITEM_COLOR[s] || 'gray');
+    `<span class="badge ${color}"${title ? ` title="${esc(title)}"` : ''}>${esc(text)}</span>`;
+  const statusBadge = (s) => badge(STATUS_LABEL[s] || s, STATUS_COLOR[s] || 'gray', STATUS_DESC[s]);
 
   // ===================== Auth =====================
-  function showLogin() {
-    $('#login').classList.remove('hidden');
-    $('#app').classList.add('hidden');
+  function renderLoginUsers() {
+    $('#login-users').innerHTML = auth.users().map((u) =>
+      `<button class="login-user" data-uid="${u.uid}">
+        <span class="avatar">${esc(u.name.slice(0, 1))}</span>
+        <span class="lu-name">${esc(u.name)}</span>
+        <span class="lu-role ${u.role}">${u.role === 'designer' ? '디자이너' : '개발자'}</span>
+        <span class="lu-gh mono">@${esc(u.githubLogin)}</span>
+      </button>`).join('');
+    document.querySelectorAll('#login-users .login-user').forEach((b) =>
+      b.addEventListener('click', () => { auth.loginAs(b.dataset.uid); showApp(); }));
   }
+  // Firebase 로그인 화면 — 단일 GitHub 버튼
+  function renderGithubLogin() {
+    $('#login-users').innerHTML =
+      `<button class="login-user" id="gh-login">
+        <span class="avatar">GH</span><span class="lu-name">GitHub로 로그인</span>
+        <span class="lu-gh mono">mash-up-kr</span>
+      </button>`;
+    $('#gh-login').addEventListener('click', async () => {
+      const r = await auth.loginGithub();
+      if (!r.ok) alert('로그인 실패: ' + r.error);
+    });
+  }
+
+  let onboardWired = false;
+  function showOnboarding() {
+    $('#login').classList.add('hidden'); $('#app').classList.add('hidden');
+    openModal('onboard-modal');
+    if (onboardWired) return; onboardWired = true;
+    const pick = async (role) => {
+      $('#onboard-msg').textContent = '저장 중…';
+      const r = await auth.setRole(role);
+      if (!r.ok) { $('#onboard-msg').textContent = r.error; return; }
+      closeModal('onboard-modal'); // onAuthChange가 showApp 재호출
+    };
+    $('#onboard-dev').addEventListener('click', () => pick('developer'));
+    $('#onboard-designer').addEventListener('click', () => pick('designer'));
+  }
+
+  function showLogin() { $('#login').classList.remove('hidden'); $('#app').classList.add('hidden'); }
+  let subscribed = false;
   function showApp() {
-    $('#login').classList.add('hidden');
-    $('#app').classList.remove('hidden');
-    renderUserChip();
-    initControls();
+    const u = auth.currentUser();
+    if (FB && u && !u.role) { showOnboarding(); return; } // 첫 로그인 역할 선택
+    $('#login').classList.add('hidden'); $('#app').classList.remove('hidden');
+    renderUserChip(); initControls();
+    if (!subscribed) { subscribed = true; features.subscribe(() => { if (!$('#app').classList.contains('hidden')) renderAll(); }); }
     renderAll();
   }
   function renderUserChip() {
-    const u = auth.currentUser();
-    if (!u) return;
+    const u = auth.currentUser(); if (!u) return;
+    const roleKo = u.role === 'designer' ? '디자이너' : '개발자';
     $('#user-chip').innerHTML =
-      `<span class="avatar">${initials(u.name)}</span><span>${u.name} · ${u.role}</span>`;
+      `<span class="avatar">${esc(u.name.slice(0, 1))}</span><span>${esc(u.name)} · ${roleKo}</span>`;
   }
 
-  $('#login-form').addEventListener('submit', (e) => {
-    e.preventDefault();
-    const res = auth.login($('#email').value, $('#password').value);
-    if (res.ok) {
-      $('#login-error').textContent = '';
-      showApp();
-    } else {
-      $('#login-error').textContent = res.error;
-    }
-  });
-  $('#btn-logout').addEventListener('click', () => {
-    auth.logout();
-    showLogin();
-  });
-
-  // ===================== Controls init =====================
+  // ===================== Controls =====================
   let controlsReady = false;
   function initControls() {
-    if (controlsReady) return;
-    controlsReady = true;
-
+    if (controlsReady) return; controlsReady = true;
     const meta = features.meta();
-    $('#meta-line').textContent = `${meta.project} · 생성 ${meta.generatedAt}`;
+    $('#meta-line').textContent = `${meta.project} · seed ${meta.generatedAt}`;
 
-    const enums = features.enums();
-    fillSelect($('#f-spec'), enums.specStatus, SPEC_LABEL, '모든 스펙 상태');
-    fillSelect($('#f-delivery'), enums.deliveryStatus, DELIVERY_LABEL, '모든 작업 상태');
-
-    const assigneeSel = $('#f-assignee');
-    assigneeSel.innerHTML =
-      `<option value="all">모든 작업자</option>` +
-      `<option value="__none">미할당</option>` +
-      auth.members().map((m) => `<option value="${m.uid}">${m.name}</option>`).join('');
-
-    $('#f-spec').addEventListener('change', (e) => { state.spec = e.target.value; renderAll(); });
-    $('#f-delivery').addEventListener('change', (e) => { state.delivery = e.target.value; renderAll(); });
-    $('#f-assignee').addEventListener('change', (e) => { state.assignee = e.target.value; renderAll(); });
     $('#search').addEventListener('input', (e) => { state.search = e.target.value.toLowerCase(); renderAll(); });
-
     document.querySelectorAll('#quick-filters .chip').forEach((chip) => {
       chip.addEventListener('click', () => {
         const q = chip.dataset.q;
         if (state.quick.has(q)) state.quick.delete(q); else state.quick.add(q);
-        chip.classList.toggle('active');
-        renderAll();
+        chip.classList.toggle('active'); renderAll();
       });
     });
-
-    $('#view-table').addEventListener('click', () => setView('table'));
-    $('#view-board').addEventListener('click', () => setView('board'));
     $('#btn-reset').addEventListener('click', resetFilters);
+    $('#btn-logout').addEventListener('click', () => { auth.logout(); controlsReady = false; showLogin(); });
+    $('#btn-new').addEventListener('click', () => openUpload(null));
 
-    renderLegend();
-    $('#btn-legend').addEventListener('click', () => $('#legend-modal').classList.remove('hidden'));
-    $('#legend-close').addEventListener('click', () => $('#legend-modal').classList.add('hidden'));
-    $('#legend-modal').addEventListener('click', (e) => {
-      if (e.target.id === 'legend-modal') $('#legend-modal').classList.add('hidden');
-    });
+    renderLegend(); renderSkillGuide();
+    $('#btn-legend').addEventListener('click', () => openModal('legend-modal'));
+    $('#btn-skill').addEventListener('click', () => openModal('skill-modal'));
+
+    document.querySelectorAll('[data-close]').forEach((b) =>
+      b.addEventListener('click', () => closeModal(b.dataset.close)));
+    document.querySelectorAll('.modal-overlay').forEach((m) =>
+      m.addEventListener('click', (e) => { if (e.target === m) closeModal(m.id); }));
     document.addEventListener('keydown', (e) => {
-      if (e.key === 'Escape') { closeEditor(); $('#legend-modal').classList.add('hidden'); }
+      if (e.key === 'Escape') document.querySelectorAll('.modal-overlay:not(.hidden)').forEach((m) => closeModal(m.id));
     });
 
-    // 편집기
-    $('#btn-new').addEventListener('click', () => openEditor(null));
-    $('#editor-close').addEventListener('click', closeEditor);
-    $('#editor-cancel').addEventListener('click', closeEditor);
-    $('#editor-save').addEventListener('click', saveEditor);
-    $('#editor-modal').addEventListener('click', (e) => {
-      if (e.target.id === 'editor-modal') closeEditor();
-    });
-  }
+    $('#upload-save').addEventListener('click', saveUpload);
+    $('#plan-save').addEventListener('click', savePlan);
+    $('#doc-approve').addEventListener('click', approveFromReview);
+    $('#doc-reject').addEventListener('click', rejectFromReview);
 
-  function renderLegend() {
-    const enums = features.enums();
-    const rowsHtml = (values, labels, colors, descs) =>
-      (values || []).map((v) => `<tr>
-        <td>${badge(labels[v] || v, colors[v] || 'gray')}</td>
-        <td><span class="meaning">${descs[v] || ''}</span></td>
-      </tr>`).join('');
-
-    $('#legend-body').innerHTML = `
-      <div class="legend-block">
-        <h3>스펙 상태 (Spec Status)</h3>
-        <p class="desc">문서가 얼마나 확정됐는가 — "이 스펙을 믿고 개발해도 되는가?"</p>
-        <table class="legend-table"><tbody>
-          ${rowsHtml(enums.specStatus, SPEC_LABEL, SPEC_COLOR, SPEC_DESC)}
-        </tbody></table>
-      </div>
-      <div class="legend-block">
-        <h3>작업 상태 (Delivery Status)</h3>
-        <p class="desc">구현이 어디까지 갔는가 — 보드 뷰의 레인과 동일.</p>
-        <table class="legend-table"><tbody>
-          ${rowsHtml(enums.deliveryStatus, DELIVERY_LABEL, DELIVERY_COLOR, DELIVERY_DESC)}
-        </tbody></table>
-      </div>
-      <div class="legend-note">
-        <b>게이트 규칙</b> · 스펙이 <b>확정</b>되기 전에는 작업 상태가 <b>준비됨</b> 이상으로 갈 수 없습니다.
-        그래서 <b>미해결 TBD</b>가 0이 되어야 구현에 착수합니다.<br>
-        <b>TBD 칸</b> = 남은 미해결 결정 수 · <b>근거 칸</b> = 첨부된 스크린샷/테스트 수 (검증완료인데 0이면 점검 필요).
-      </div>
-    `;
+    // 디자이너는 spec을 작성/업로드하지 않는다 (PRD 3장: 승인/반려만 관여)
+    $('#btn-new').style.display = auth.isDeveloper() ? '' : 'none';
   }
-
-  function fillSelect(sel, values, labels, allLabel) {
-    sel.innerHTML =
-      `<option value="all">${allLabel}</option>` +
-      (values || []).map((v) => `<option value="${v}">${labels[v] || v}</option>`).join('');
-  }
-
-  function setView(v) {
-    state.view = v;
-    $('#view-table').classList.toggle('active', v === 'table');
-    $('#view-board').classList.toggle('active', v === 'board');
-    renderCenter();
-  }
+  const openModal = (id) => $('#' + id).classList.remove('hidden');
+  const closeModal = (id) => $('#' + id).classList.add('hidden');
 
   function resetFilters() {
-    state.module = 'all'; state.spec = 'all'; state.delivery = 'all';
-    state.assignee = 'all'; state.quick.clear(); state.search = '';
-    $('#f-spec').value = 'all'; $('#f-delivery').value = 'all'; $('#f-assignee').value = 'all';
+    state.status = 'all'; state.quick.clear(); state.search = '';
     $('#search').value = '';
     document.querySelectorAll('#quick-filters .chip').forEach((c) => c.classList.remove('active'));
     renderAll();
   }
 
-  // ===================== Filtering =====================
-  function rows() {
-    return features.all().map((f) => ({ f, t: tracking.get(f.id) }));
+  function renderLegend() {
+    const rows = (features.enums().status || []).map((s) =>
+      `<tr><td>${statusBadge(s)}</td><td><span class="meaning">${esc(STATUS_DESC[s] || '')}</span></td></tr>`).join('');
+    $('#legend-body').innerHTML = `
+      <p class="desc">specs/{feature} 한 묶음이 단일 status를 가진다. 디자이너는 spec에만 관여.</p>
+      <table class="legend-table"><tbody>${rows}</tbody></table>
+      <div class="legend-note">
+        <b>게이트</b> · spec <b>승인(spec_approved)</b> 전에는 plan 작성 불가.
+        승인 후 spec을 수정하면 <b>무효화</b> — 작성중으로 복귀하고 plan은 "오래됨" 표시,
+        열린 PR은 자동 종료됩니다.
+      </div>`;
   }
+
+  function renderSkillGuide() {
+    $('#skill-body').innerHTML = `
+      <p class="desc">문서 <b>생성은 대시보드가 아니라 로컬 Claude Code 스킬</b>로 합니다.
+      정의는 Mino-Android 레포 <code>.claude/</code>에 있습니다.</p>
+      <ol class="skill-steps">
+        <li><b>설치</b> — Mino-Android 레포에서 <code>git pull</code> (스킬/에이전트 최신화)</li>
+        <li><b>spec 생성</b> — <code>spec-gen</code> 실행 · 입력: Figma URL + 기획서 →
+          <code>./spec.md</code> + <code>./assets/*.png</code> 산출 (자가검수 <code>spec-reviewer</code> 포함)</li>
+        <li><b>업로드</b> — 산출물을 이 대시보드에 drag-drop ([+ 새 스펙 업로드]) → 구조 검증 → 디자이너 컨펌</li>
+        <li><b>plan 생성</b> — spec 승인 후 <code>plan-gen</code> 실행 (레포 체크아웃 안에서) → plan 붙여넣기 → PR 생성</li>
+      </ol>
+      <div class="legend-note">대시보드는 입력값 치환을 하지 않습니다. 스킬 실행 시 직접 Figma URL·기획서를 전달하세요.</div>`;
+  }
+
+  // ===================== Filtering =====================
   function filtered() {
-    return rows().filter(({ f, t }) => {
-      if (state.module !== 'all' && f.module !== state.module) return false;
-      if (state.spec !== 'all' && t.specStatus !== state.spec) return false;
-      if (state.delivery !== 'all' && t.deliveryStatus !== state.delivery) return false;
-      if (state.assignee === '__none' && t.assignee) return false;
-      if (state.assignee !== 'all' && state.assignee !== '__none' && t.assignee !== state.assignee) return false;
-      if (state.quick.has('unassigned') && t.assignee) return false;
-      if (state.quick.has('tbd') && (!f.tbds || !f.tbds.length)) return false;
-      if (state.quick.has('blocked') && t.deliveryStatus !== 'Blocked') return false;
-      if (state.quick.has('pr') && !t.prUrl) return false;
+    const me = auth.currentUser();
+    return features.all().filter((f) => {
+      if (state.status !== 'all' && f.status !== state.status) return false;
+      if (state.quick.has('planStale') && !f.planStale) return false;
+      if (state.quick.has('pr') && !f.prNumber) return false;
+      if (state.quick.has('mine') && (!me || f.createdBy !== me.uid)) return false;
       if (state.search) {
-        const itemText = (f.items || []).map((it) => `${it.id} ${it.title} ${it.trigger} ${it.response}`).join(' ');
-        const tbdText = (f.tbds || []).map((q) => q.question).join(' ');
-        const hay = `${f.title} ${f.id} ${f.module} ${itemText} ${tbdText}`.toLowerCase();
+        const hay = `${f.title} ${f.slug}`.toLowerCase();
         if (!hay.includes(state.search)) return false;
       }
       return true;
     });
   }
 
-  // ===================== Render: all =====================
-  function renderAll() {
-    renderKpis();
-    renderModules();
-    renderCenter();
-    renderDetail();
-  }
+  // ===================== Render =====================
+  function renderAll() { renderKpis(); renderStatusList(); renderCenter(); renderDetail(); }
 
   function renderKpis() {
-    const all = rows();
-    const total = all.length;
-    const notStarted = all.filter((r) => r.t.deliveryStatus === 'NotStarted').length;
-    const unassigned = all.filter((r) => !r.t.assignee).length;
-    const openTbd = all.reduce((n, r) => n + (r.f.tbds ? r.f.tbds.length : 0), 0);
-    const prLinked = all.filter((r) => r.t.prUrl).length;
-    const evidenceMissing = all.filter((r) => !r.t.evidence || !r.t.evidence.length).length;
+    const all = features.all();
+    const c = (pred) => all.filter(pred).length;
     const kpis = [
-      { val: total, lbl: '전체 Feature' },
-      { val: notStarted, lbl: '미시작' },
-      { val: unassigned, lbl: '미할당', cls: unassigned ? 'warn' : '' },
-      { val: openTbd, lbl: '미해결 TBD', cls: openTbd ? 'warn' : '' },
-      { val: prLinked, lbl: 'PR 연결' },
-      { val: evidenceMissing, lbl: '근거 없음', cls: evidenceMissing ? 'danger' : '' },
+      { val: all.length, lbl: '전체' },
+      { val: c((f) => ['spec_draft', 'spec_changes_requested'].includes(f.status)), lbl: '작성중' },
+      { val: c((f) => f.status === 'spec_in_review'), lbl: '검토중', cls: c((f) => f.status === 'spec_in_review') ? 'warn' : '' },
+      { val: c((f) => ['spec_approved', 'plan_drafted'].includes(f.status)), lbl: '승인됨' },
+      { val: c((f) => f.status === 'pr_open'), lbl: 'PR 열림' },
+      { val: c((f) => f.status === 'merged'), lbl: '머지됨' },
+      { val: c((f) => f.planStale), lbl: 'plan 오래됨', cls: c((f) => f.planStale) ? 'danger' : '' },
     ];
-    $('#kpi-row').innerHTML = kpis
-      .map((k) => `<div class="kpi ${k.cls || ''}"><div class="val">${k.val}</div><div class="lbl">${k.lbl}</div></div>`)
-      .join('');
+    $('#kpi-row').innerHTML = kpis.map((k) =>
+      `<div class="kpi ${k.cls || ''}"><div class="val">${k.val}</div><div class="lbl">${k.lbl}</div></div>`).join('');
   }
 
-  function renderModules() {
-    const all = rows();
+  function renderStatusList() {
+    const all = features.all();
     const counts = {};
-    all.forEach((r) => { counts[r.f.module] = (counts[r.f.module] || 0) + 1; });
+    all.forEach((f) => { counts[f.status] = (counts[f.status] || 0) + 1; });
     const items = [{ id: 'all', name: '전체', count: all.length }].concat(
-      features.modules().map((m) => ({ id: m.id, name: m.name, count: counts[m.id] || 0 }))
-    );
-    $('#module-list').innerHTML = items
-      .map((m) => `<div class="mod-item ${state.module === m.id ? 'active' : ''}" data-mod="${m.id}">
-          <span>${m.name}</span><span class="count">${m.count}</span></div>`)
-      .join('');
-    document.querySelectorAll('#module-list .mod-item').forEach((it) => {
-      it.addEventListener('click', () => { state.module = it.dataset.mod; renderAll(); });
-    });
+      (features.enums().status || []).map((s) => ({ id: s, name: STATUS_LABEL[s] || s, count: counts[s] || 0 })));
+    $('#status-list').innerHTML = items.map((s) =>
+      `<div class="mod-item ${state.status === s.id ? 'active' : ''}" data-st="${s.id}">
+        <span>${esc(s.name)}</span><span class="count">${s.count}</span></div>`).join('');
+    document.querySelectorAll('#status-list .mod-item').forEach((it) =>
+      it.addEventListener('click', () => { state.status = it.dataset.st; renderAll(); }));
   }
 
   function renderCenter() {
+    const data = filtered();
     const body = $('#center-body');
-    body.innerHTML = state.view === 'table' ? tableHtml() : boardHtml();
-    if (state.view === 'table') {
-      body.querySelectorAll('tr[data-id]').forEach((tr) =>
-        tr.addEventListener('click', () => select(tr.dataset.id)));
-    } else {
-      body.querySelectorAll('.card[data-id]').forEach((c) =>
-        c.addEventListener('click', () => select(c.dataset.id)));
-    }
-  }
-
-  function tableHtml() {
-    const data = filtered();
-    if (!data.length) return `<div class="detail-empty">조건에 맞는 Feature가 없습니다.</div>`;
-    const head = `<tr>
-      <th>Feature</th><th>모듈</th><th>스펙</th><th>작업</th><th>작업자</th><th>근거</th><th>TBD</th>
-    </tr>`;
-    const body = data.map(({ f, t }) => {
-      const sel = state.selectedId === f.id ? 'selected' : '';
-      const ev = (t.evidence && t.evidence.length) || 0;
-      const tbd = (f.tbds && f.tbds.length) || 0;
-      return `<tr class="${sel}" data-id="${f.id}">
-        <td><div class="feat-title">${f.title}</div><div class="feat-sub mono">${f.id}</div></td>
-        <td><span class="mono">${f.module}</span><div class="feat-sub">${f.type}</div></td>
-        <td>${specBadge(t.specStatus)}</td>
-        <td>${deliveryBadge(t.deliveryStatus)}</td>
-        <td>${t.assignee ? memberName(t.assignee) : '<span class="feat-sub">미할당</span>'}</td>
-        <td><span class="pill ${ev ? 'has' : ''}">${ev}</span></td>
-        <td><span class="pill ${tbd ? 'has' : ''}">${tbd}</span></td>
-      </tr>`;
+    if (!data.length) { body.innerHTML = `<div class="detail-empty">조건에 맞는 Feature가 없습니다.</div>`; return; }
+    const head = `<tr><th>Feature</th><th>상태</th><th>버전</th><th>PR</th></tr>`;
+    const rows = data.map((f) => {
+      const sel = state.selectedId === f.featureId ? 'selected' : '';
+      const pr = f.prNumber ? `<a href="${f.prUrl}" target="_blank" rel="noopener" onclick="event.stopPropagation()">#${f.prNumber}</a>` : '<span class="feat-sub">—</span>';
+      return `<tr class="${sel}" data-id="${f.featureId}">
+        <td><div class="feat-title">${esc(f.title)}</div><div class="feat-sub mono">${esc(f.slug)}</div></td>
+        <td>${statusBadge(f.status)}${f.planStale ? ' ' + badge('stale', 'red', 'plan 오래됨') : ''}</td>
+        <td class="mono">${esc(f.specVersion || '-')}</td>
+        <td>${pr}</td></tr>`;
     }).join('');
-    return `<table class="feature-table"><thead>${head}</thead><tbody>${body}</tbody></table>`;
+    body.innerHTML = `<table class="feature-table"><thead>${head}</thead><tbody>${rows}</tbody></table>`;
+    body.querySelectorAll('tr[data-id]').forEach((tr) =>
+      tr.addEventListener('click', () => select(tr.dataset.id)));
   }
 
-  function boardHtml() {
-    const data = filtered();
-    const lanes = features.enums().deliveryStatus || [];
-    return `<div class="board">` + lanes.map((lane) => {
-      const cards = data.filter(({ t }) => t.deliveryStatus === lane);
-      return `<div class="lane">
-        <div class="lane-h"><span>${DELIVERY_LABEL[lane] || lane}</span><span class="count">${cards.length}</span></div>
-        ${cards.map(({ f, t }) => `<div class="card" data-id="${f.id}">
-            <div class="t">${f.title}</div>
-            <div class="m mono">${f.module}</div>
-            <div class="foot">
-              <span class="feat-sub">${t.assignee ? memberName(t.assignee) : '미할당'}</span>
-              ${specBadge(t.specStatus)}
-            </div>
-          </div>`).join('') || '<div class="feat-sub">—</div>'}
-      </div>`;
-    }).join('') + `</div>`;
+  function select(id) { state.selectedId = id; renderCenter(); renderDetail(); }
+
+  // ---------- 작은 마크다운 렌더러 (문서 뷰어용) ----------
+  function mdToHtml(src) {
+    const e = (s) => String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;');
+    const inline = (s) => e(s)
+      .replace(/!\[([^\]]*)\]\(([^)\s]+)[^)]*\)/g, '<img src="$2" alt="$1" loading="lazy" />')
+      .replace(/\[([^\]]+)\]\(([^)\s]+)[^)]*\)/g, '<a href="$2" target="_blank" rel="noopener">$1</a>')
+      .replace(/\*\*([^*]+)\*\*/g, '<b>$1</b>')
+      .replace(/`([^`]+)`/g, '<code>$1</code>');
+    const isRow = (l) => /^\s*\|.*\|\s*$/.test(l);
+    const isDiv = (l) => /^\s*\|?[\s:|-]+\|?\s*$/.test(l) && l.includes('-');
+    const cells = (l) => l.replace(/^\s*\|/, '').replace(/\|\s*$/, '').split('|').map((c) => c.trim());
+    const lines = String(src).replace(/\r\n/g, '\n').split('\n');
+    let html = '', inList = false;
+    const closeList = () => { if (inList) { html += '</ul>'; inList = false; } };
+    for (let i = 0; i < lines.length; i++) {
+      const line = lines[i];
+      if (isRow(line) && i + 1 < lines.length && isDiv(lines[i + 1])) {
+        closeList(); const head = cells(line); let rows = []; i += 2;
+        while (i < lines.length && isRow(lines[i]) && !isDiv(lines[i])) { rows.push(cells(lines[i])); i++; } i--;
+        html += '<table><thead><tr>' + head.map((c) => `<th>${inline(c)}</th>`).join('') + '</tr></thead><tbody>'
+          + rows.map((r) => '<tr>' + head.map((_, n) => `<td>${inline(r[n] || '')}</td>`).join('') + '</tr>').join('')
+          + '</tbody></table>'; continue;
+      }
+      const h = line.match(/^(#{1,4})\s+(.*)/);
+      if (h) { closeList(); html += `<h3>${inline(h[2])}</h3>`; continue; }
+      if (/^\s*[-*]\s+/.test(line)) { if (!inList) { html += '<ul>'; inList = true; } html += `<li>${inline(line.replace(/^\s*[-*]\s+/, ''))}</li>`; continue; }
+      if (/^<!--/.test(line.trim())) continue; // slug 주석 숨김
+      if (!line.trim()) { closeList(); continue; }
+      closeList(); html += `<p>${inline(line)}</p>`;
+    }
+    closeList(); return html;
+  }
+
+  // 리뷰 모드 상태 (디자이너가 spec_in_review spec에 코멘트 달 때)
+  let reviewState = null; // { featureId, comments: [{section, body}] }
+
+  function openDoc(f, kind) {
+    const body = kind === 'plan' ? f.planBody : f.specBody;
+    // 검토중 = 결정(승인/반려) 모드, 반려됨 = 보충 코멘트(append) 모드
+    const decisionMode = kind === 'spec' && auth.isDesigner() && f.status === 'spec_in_review';
+    const appendMode = kind === 'spec' && auth.isDesigner() && f.status === 'spec_changes_requested';
+    const reviewMode = decisionMode || appendMode;
+    $('#doc-modal-title').textContent = `${f.title} · ${kind === 'plan' ? 'plan' : 'spec'}`;
+    const bodyEl = $('#doc-modal-body');
+    bodyEl.innerHTML = (body && body.trim()) ? mdToHtml(body) : '<div class="feat-sub">본문 없음.</div>';
+
+    const foot = $('#doc-foot'), hint = $('#doc-review-hint');
+    if (reviewMode) {
+      reviewState = { featureId: f.featureId, comments: [], mode: decisionMode ? 'decision' : 'append' };
+      bodyEl.classList.add('review-mode');
+      foot.classList.remove('hidden'); hint.classList.remove('hidden');
+      $('#doc-msg').textContent = '';
+      // 버튼 구성: 검토중 → 승인 + 반려 제출 / 반려됨 → 코멘트 추가만
+      $('#doc-approve').classList.toggle('hidden', !decisionMode);
+      $('#doc-reject').textContent = decisionMode ? '반려 제출' : '코멘트 추가';
+      addReviewAnchors(bodyEl);
+      updateReviewCount();
+    } else {
+      reviewState = null;
+      bodyEl.classList.remove('review-mode');
+      foot.classList.add('hidden'); hint.classList.add('hidden');
+    }
+    openModal('doc-modal');
+  }
+
+  // 각 제목 옆에 💬 코멘트 버튼 + 섹션 스레드를 붙인다 (Notion식)
+  function addReviewAnchors(container) {
+    container.querySelectorAll('h3').forEach((h) => {
+      const section = h.textContent.trim();
+      const btn = document.createElement('button');
+      btn.className = 'cmt-add'; btn.type = 'button'; btn.textContent = '💬';
+      btn.title = '이 섹션에 코멘트';
+      h.appendChild(btn);
+      const thread = document.createElement('div');
+      thread.className = 'cmt-thread';
+      h.insertAdjacentElement('afterend', thread);
+      btn.addEventListener('click', () => toggleCmtInput(section, thread));
+    });
+  }
+
+  function toggleCmtInput(section, thread) {
+    // 이미 입력창이 있으면 제거하지 않고 재포커스 (추가 코멘트 계속 입력 가능)
+    let row = thread.querySelector('.cmt-input');
+    if (!row) {
+      row = document.createElement('div');
+      row.className = 'cmt-input';
+      row.innerHTML = `<input type="text" placeholder="${esc(section)} 코멘트…" />
+        <button class="btn-add" type="button">추가</button>`;
+      thread.appendChild(row);
+      const input = row.querySelector('input');
+      const add = () => {
+        const v = input.value.trim();
+        if (!v) return;
+        const c = { section, body: v };
+        reviewState.comments.push(c);
+        thread.insertBefore(makeBubble(c, thread), row); // 입력창은 그대로 두고 위에 쌓음
+        input.value = '';
+        updateReviewCount();
+        input.focus(); // 연속 입력
+      };
+      row.querySelector('button').addEventListener('click', add);
+      input.addEventListener('keydown', (e) => {
+        // 한글 IME 조합 중 Enter는 글자 확정용이므로 무시 (중복/조각 입력 방지)
+        if (e.key !== 'Enter' || e.isComposing || e.keyCode === 229) return;
+        e.preventDefault();
+        add();
+      });
+    }
+    row.querySelector('input').focus();
+  }
+
+  function makeBubble(c, thread) {
+    const bubble = document.createElement('div');
+    bubble.className = 'cmt-bubble';
+    bubble.innerHTML = `<span class="cmt-sec">${esc(c.section)}</span><span class="cmt-body">${esc(c.body)}</span>
+      <button class="cmt-del" type="button" title="삭제">×</button>`;
+    bubble.querySelector('.cmt-del').addEventListener('click', () => {
+      const i = reviewState.comments.indexOf(c);
+      if (i >= 0) reviewState.comments.splice(i, 1);
+      bubble.remove();
+      updateReviewCount();
+    });
+    return bubble;
+  }
+
+  function updateReviewCount() {
+    const n = reviewState ? reviewState.comments.length : 0;
+    $('#doc-review-count').textContent = `코멘트 ${n}`;
+    $('#doc-reject').disabled = n === 0;
+  }
+
+  async function approveFromReview() {
+    if (!reviewState) return;
+    if (!confirm('이 spec을 승인합니다. 이후 plan 작성이 가능해집니다.')) return;
+    $('#doc-msg').textContent = '처리 중…';
+    const r = await features.approve(reviewState.featureId);
+    if (!r.ok) { $('#doc-msg').textContent = r.error; return; }
+    const id = reviewState.featureId;
+    closeModal('doc-modal'); select(id); renderAll();
+  }
+
+  async function rejectFromReview() {
+    if (!reviewState) return;
+    if (!reviewState.comments.length) {
+      $('#doc-msg').textContent = '코멘트가 1개 이상 필요합니다.'; return;
+    }
+    $('#doc-msg').textContent = '처리 중…';
+    const r = reviewState.mode === 'append'
+      ? await features.addComments(reviewState.featureId, reviewState.comments)   // 반려 후 보충 코멘트
+      : await features.requestChanges(reviewState.featureId, reviewState.comments); // 검토중 반려
+    if (!r.ok) { $('#doc-msg').textContent = r.error; return; }
+    const id = reviewState.featureId;
+    closeModal('doc-modal'); select(id); renderAll();
   }
 
   // ===================== Detail =====================
-  function select(id) {
-    state.selectedId = id;
-    renderCenter();
-    renderDetail();
-  }
-
-  // 아주 작은 마크다운 렌더러 (plan 표시용: 헤딩/리스트/볼드/코드)
-  function mdToHtml(src) {
-    const esc = (s) => String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;');
-    const inline = (s) => esc(s).replace(/\*\*([^*]+)\*\*/g, '<b>$1</b>').replace(/`([^`]+)`/g, '<code>$1</code>');
-    let html = '', inList = false;
-    String(src).split('\n').forEach((line) => {
-      const h = line.match(/^(#{1,4})\s+(.*)/);
-      if (h) { if (inList) { html += '</ul>'; inList = false; } html += `<h3>${inline(h[2])}</h3>`; return; }
-      if (/^\s*[-*]\s+/.test(line)) {
-        if (!inList) { html += '<ul>'; inList = true; }
-        html += `<li>${inline(line.replace(/^\s*[-*]\s+/, ''))}</li>`; return;
-      }
-      if (!line.trim()) { if (inList) { html += '</ul>'; inList = false; } return; }
-      if (inList) { html += '</ul>'; inList = false; }
-      html += `<p>${inline(line)}</p>`;
-    });
-    if (inList) html += '</ul>';
-    return html;
-  }
-
   function renderDetail() {
     const panel = $('#detail-panel');
-    if (!state.selectedId) {
-      panel.innerHTML = `<div class="detail-empty">왼쪽 목록에서 Feature를 선택하세요.</div>`;
-      return;
-    }
+    if (!state.selectedId) { panel.innerHTML = `<div class="detail-empty">왼쪽 목록에서 Feature를 선택하세요.</div>`; return; }
     const f = features.get(state.selectedId);
-    const t = tracking.get(state.selectedId);
-    if (!f) return;
+    if (!f) { panel.innerHTML = `<div class="detail-empty">없는 Feature.</div>`; return; }
 
-    const itemList = f.items || [];
-    const itemsHtml = itemList
-      .map((it) => `<li class="spec-item">
-        <div class="spec-item-h"><span class="mono">${it.id || ''}</span> ${it.title || ''} ${itemBadge(it.specStatus)}</div>
-        <div class="spec-item-b"><span class="when">${it.trigger || ''}</span> → <span class="then">${it.response || ''}</span></div>
-      </li>`).join('');
-
-    const nonGoals = (f.nonGoals || []).map((g) => (typeof g === 'string' ? g : (g && g.text) || '')).filter(Boolean);
-    const nonGoalHtml = nonGoals.length
-      ? `<div class="detail-section"><h3>비목표 (Out of scope)</h3>
-          <ul class="ac-list">${nonGoals.map((g) => `<li><span>${g}</span></li>`).join('')}</ul></div>` : '';
-    const stateRows = (f.states || []).filter((s) => s && (s.label || s.text));
-    const statesHtml = stateRows.length
-      ? `<div class="detail-section"><h3>상태 / 예외</h3>
-          <ul class="ac-list">${stateRows.map((s) => `<li><span class="id">${s.label || ''}</span><span>${s.text || ''}</span></li>`).join('')}</ul></div>` : '';
-    const tbdHtml = (f.tbds || []).length
-      ? (f.tbds).map((q) => `<div class="tbd-item"><div class="tbd-q">${q.question}</div>
-          <div class="tbd-meta">${q.id} · 결정 주체: ${q.resolver}</div></div>`).join('')
-      : '<div class="feat-sub">미해결 항목 없음</div>';
-
-    const memberOptions = `<option value="">미할당</option>` +
-      auth.members().map((m) => `<option value="${m.uid}" ${t.assignee === m.uid ? 'selected' : ''}>${m.name} · ${m.role}</option>`).join('');
-    const specOptions = (features.enums().specStatus || [])
-      .map((s) => `<option value="${s}" ${t.specStatus === s ? 'selected' : ''}>${SPEC_LABEL[s] || s}</option>`).join('');
-    const deliveryOptions = (features.enums().deliveryStatus || [])
-      .map((s) => `<option value="${s}" ${t.deliveryStatus === s ? 'selected' : ''}>${DELIVERY_LABEL[s] || s}</option>`).join('');
-
-    const src = f.sources || {};
-    const link = (label, path) => path
-      ? `<a href="#" data-doc="${path}">${label} · ${path.split('/').pop()}</a>`
-      : `<a class="disabled">${label} · 없음</a>`;
-    const prRow = t.prUrl
-      ? `<a href="${t.prUrl}" target="_blank">PR #${t.prNumber || ''}</a>`
-      : '<span class="feat-sub">없음</span>';
-
-    // 문서 단계 (spec → plan → tasks) + 게이트
-    const specConfirmed = t.specStatus === 'Confirmed';
-    const planExists = !!(f.planMd && f.planMd.trim());
-    const tasksList = f.tasks || [];
-    const doneMap = t.tasksDone || {};
-    const doneCount = tasksList.filter((tk) => doneMap[tk.id]).length;
-
-    // PR 생성 게이트: spec 확정 + plan + tasks 가 모두 완료돼야 활성화
-    const canPr = specConfirmed && planExists && tasksList.length > 0;
-    const prOpen = t.prState === 'open';
-    const prMerged = t.prState === 'merged';
-
-    const stagesHtml = `
-      <div class="detail-section">
-        <h3>문서 단계 (spec → plan → tasks)</h3>
-        <div class="stage-row">
-          <div class="stage ok"><b>Spec</b><span>${specConfirmed ? '확정' : '작성됨'}</span>
-            <button class="btn-ghost" data-doc="spec">편집</button></div>
-          <div class="stage ${planExists ? 'ok' : (specConfirmed ? '' : 'lock')}"><b>Plan</b>
-            <span>${planExists ? '작성됨' : (specConfirmed ? '대기' : 'spec 확정 필요')}</span>
-            <button class="btn-ghost" data-doc="plan" ${specConfirmed ? '' : 'disabled'}>${planExists ? '편집' : '작성'}</button></div>
-          <div class="stage ${tasksList.length ? 'ok' : (planExists ? '' : 'lock')}"><b>Tasks</b>
-            <span>${tasksList.length ? `${doneCount}/${tasksList.length}` : (planExists ? '대기' : 'plan 필요')}</span>
-            <button class="btn-ghost" data-doc="tasks" ${planExists ? '' : 'disabled'}>${tasksList.length ? '편집' : '작성'}</button></div>
-        </div>
-      </div>`;
-
-    const planHtml = planExists
-      ? `<div class="detail-section"><h3>Plan</h3><div class="md">${mdToHtml(f.planMd)}</div></div>` : '';
-
-    // 커버리지: 태스크들이 참조한 item vs spec의 전체 item
-    const allItemIds = itemList.map((it) => it.id).filter(Boolean);
-    const coveredItems = new Set();
-    tasksList.forEach((tk) => (tk.itemRefs || []).forEach((a) => coveredItems.add(a)));
-    const uncovered = allItemIds.filter((a) => !coveredItems.has(a));
-    const coverageHtml = (tasksList.length && allItemIds.length)
-      ? (uncovered.length
-        ? `<div class="task-coverage warn">⚠ 태스크가 덮지 않은 기능: ${uncovered.map((a) => `<span class="mono">${a}</span>`).join(' ')}</div>`
-        : `<div class="task-coverage ok">✓ 모든 기능이 태스크로 덮였습니다</div>`)
-      : '';
-    const acChips = (tk) => (tk.itemRefs && tk.itemRefs.length)
-      ? ' ' + tk.itemRefs.map((a) => `<span class="ac-chip">${a}</span>`).join('') : '';
-
-    const tasksHtml = tasksList.length
-      ? `<div class="detail-section"><h3>Tasks (${doneCount}/${tasksList.length})</h3>
-          ${coverageHtml}
-          <ul class="task-list">${tasksList.map((tk) => `<li><label>
-            <input type="checkbox" data-task="${attr(tk.id)}" ${doneMap[tk.id] ? 'checked' : ''} />
-            <span><span class="mono">${tk.id || ''}</span> ${tk.title || ''} ${tk.module ? `<span class="feat-sub">${tk.module}</span>` : ''}${acChips(tk)}</span>
-          </label></li>`).join('')}</ul>
-          ${(f.tasksMd && f.tasksMd.trim()) ? `<details class="task-detail"><summary>태스크 원문 (동작·디자인·DoD)</summary><div class="md">${mdToHtml(f.tasksMd)}</div></details>` : ''}
-        </div>` : '';
+    const isDev = auth.isDeveloper();
+    const isDesigner = auth.isDesigner();
+    const planExists = !!(f.planBody && f.planBody.trim());
 
     panel.innerHTML = `
       <div class="detail-h">
-        <div class="crumb">${f.module} · ${f.type}</div>
-        <h2>${f.title}</h2>
+        <div class="crumb mono">${esc(f.slug)} · ${esc(f.specVersion || '')}</div>
+        <h2>${esc(f.title)}</h2>
         <div class="detail-badges">
-          ${specBadge(t.specStatus)}
-          ${deliveryBadge(t.deliveryStatus)}
-          ${prMerged ? badge('Published', 'green') : (prOpen ? badge('PR 열림', 'blue') : '')}
-          ${features.isDraft(f.id) ? badge('Draft 저장', 'gray') : ''}
-        </div>
-        <div class="detail-actions">
-          <button class="btn-ghost" id="btn-edit">편집</button>
-          <button class="btn-primary" id="btn-confirm" ${specConfirmed ? 'disabled' : ''}>
-            ${specConfirmed ? '확정됨' : '확정'}
-          </button>
-          ${prMerged
-            ? `<a class="btn-primary" href="${t.prUrl || '#'}" target="_blank">✅ Published</a>`
-            : prOpen
-              ? `<a class="btn-primary" href="${t.prUrl || '#'}" target="_blank">PR #${t.prNumber || ''} 보기</a>`
-              : `<button class="btn-primary" id="btn-pr" ${canPr ? '' : 'disabled'} title="${canPr ? 'Android 레포에 PR 생성' : 'spec 확정 + plan + tasks 완료 후 가능'}">PR 생성</button>`}
+          ${statusBadge(f.status)}
+          ${f.planStale ? badge('plan stale', 'red') : ''}
+          ${f.prNumber ? badge('PR #' + f.prNumber, 'blue') : ''}
         </div>
       </div>
-
-      ${stagesHtml}
-
+      ${stepperHtml(f)}
+      ${actionsHtml(f, isDev, isDesigner, planExists)}
       <div class="detail-section">
-        <h3>작업자 / 상태</h3>
-        <div class="assignee-row" style="margin-bottom:10px">
-          <span class="k" style="color:var(--muted)">담당</span>
-          <select id="sel-assignee">${memberOptions}</select>
-        </div>
-        <div class="assignee-row" style="margin-bottom:10px">
-          <span class="k" style="color:var(--muted)">스펙</span>
-          <select id="sel-spec">${specOptions}</select>
-        </div>
-        <div class="assignee-row">
-          <span class="k" style="color:var(--muted)">작업</span>
-          <select id="sel-delivery">${deliveryOptions}</select>
-        </div>
+        <h3>출처 (Figma)</h3>
+        ${(f.figmaSources && f.figmaSources.length)
+          ? f.figmaSources.map((u) => `<div class="kv"><span class="v"><a href="${esc(u)}" target="_blank" rel="noopener">${esc(u)}</a></span></div>`).join('')
+          : '<div class="feat-sub">없음</div>'}
       </div>
-
       <div class="detail-section">
-        <h3>동작 (Behavior)</h3>
-        <div class="kv"><span class="k">트리거</span><span class="v">${f.trigger || '-'}</span></div>
-        <div class="kv"><span class="k">동작</span><span class="v">${f.behavior || '-'}</span></div>
-        <div class="kv"><span class="k">디자인</span><span class="v">${f.designRef && f.designRef.figmaNode ? 'Figma node ' + f.designRef.figmaNode : '-'}</span></div>
-        <div class="kv"><span class="k">브랜치</span><span class="v mono">${t.branch || '-'}</span></div>
-        <div class="kv"><span class="k">PR</span><span class="v">${prRow}</span></div>
-      </div>
-
-      ${nonGoalHtml}
-      ${statesHtml}
-
-      <div class="detail-section">
-        <h3>상세 기능 (Spec Items · ${itemList.length})</h3>
-        <ul class="spec-item-list">${itemsHtml || '<li>정의된 기능 항목 없음</li>'}</ul>
-      </div>
-
-      <div class="detail-section">
-        <h3>Open Questions (TBD)</h3>
-        ${tbdHtml}
-      </div>
-
-      ${planHtml}
-      ${tasksHtml}
-
-      <div class="detail-section">
-        <h3>원문 문서</h3>
-        <div class="source-links">
-          ${link('Spec', src.spec)}
-          ${link('Plan', src.plan)}
-          ${link('Tasks', src.tasks)}
+        <h3>문서</h3>
+        <div class="doc-row">
+          <button class="btn-primary" data-doc="spec">📄 spec 보기</button>
+          ${planExists ? `<button class="btn-ghost" data-doc="plan">📄 plan 보기</button>` : '<span class="feat-sub">plan 없음</span>'}
         </div>
+        <div class="feat-sub" style="margin-top:6px">이미지 ${f.assets ? f.assets.length : 0}개 · 작성자 ${esc(userName(f.createdBy))}</div>
       </div>
-    `;
+      ${reviewsHtml(f)}`;
 
-    // 편집 / 확정 / PR 생성
-    $('#btn-edit').addEventListener('click', () => openEditor(f, 'spec'));
-    const confirmBtn = $('#btn-confirm');
-    if (confirmBtn && !confirmBtn.disabled) confirmBtn.addEventListener('click', () => confirmSpec(f));
-    const prBtn = $('#btn-pr');
-    if (prBtn && !prBtn.disabled) prBtn.addEventListener('click', () => createPr(f));
+    // 문서 보기
+    panel.querySelectorAll('button[data-doc]').forEach((b) => b.addEventListener('click', () => openDoc(f, b.dataset.doc)));
+    // 액션 와이어링
+    wireActions(panel, f);
+  }
 
-    // 문서 단계 편집 (게이트)
-    panel.querySelectorAll('.stage button[data-doc]').forEach((b) => {
-      if (!b.disabled) b.addEventListener('click', () => openEditor(f, b.dataset.doc));
+  function stepperHtml(f) {
+    const cur = STEP_INDEX[f.status];
+    const branch = f.status === 'spec_changes_requested' ? '반려됨' : (f.status === 'pr_closed' ? 'PR 종료' : '');
+    return `<div class="stepper">${STEPS.map((s, i) => {
+      const cls = i < cur ? 'done' : (i === cur ? 'active' : '');
+      return `<div class="step ${cls}"><span class="dot"></span><span class="slabel">${s.label}</span></div>`;
+    }).join('<span class="sline"></span>')}
+    ${branch ? `<div class="step-branch">${branch}</div>` : ''}</div>`;
+  }
+
+  function actionsHtml(f, isDev, isDesigner, planExists) {
+    const btns = [];
+    // 개발자 액션
+    if (isDev) {
+      if (['spec_draft', 'spec_changes_requested'].includes(f.status)) {
+        btns.push(`<button class="btn-ghost" data-act="edit-spec">spec 수정</button>`);
+        btns.push(`<button class="btn-primary" data-act="request-review">컨펌 요청</button>`);
+      } else if (f.status === 'spec_approved') {
+        btns.push(`<button class="btn-ghost" data-act="edit-spec">spec 수정</button>`);
+        btns.push(`<button class="btn-primary" data-act="edit-plan">plan 붙여넣기</button>`);
+      } else if (f.status === 'plan_drafted') {
+        btns.push(`<button class="btn-ghost" data-act="edit-spec">spec 수정</button>`);
+        btns.push(`<button class="btn-ghost" data-act="edit-plan">plan 수정</button>`);
+        btns.push(`<button class="btn-primary" data-act="create-pr">PR 생성</button>`);
+      } else if (f.status === 'pr_open') {
+        btns.push(`<a class="btn-primary" href="${f.prUrl}" target="_blank" rel="noopener">PR #${f.prNumber} 보기</a>`);
+        // mock: Webhook 시뮬레이션
+        btns.push(`<button class="btn-ghost" data-act="sim-merged">[mock] merged</button>`);
+        btns.push(`<button class="btn-ghost" data-act="sim-closed">[mock] closed</button>`);
+      }
+    }
+    // 디자이너 액션 — 스펙 미리보기에서 코멘트 + 승인/반려
+    if (isDesigner && f.status === 'spec_in_review') {
+      btns.push(`<button class="btn-primary" data-act="review-spec">📝 스펙 검토</button>`);
+    } else if (isDesigner && f.status === 'spec_changes_requested') {
+      btns.push(`<button class="btn-ghost" data-act="review-spec">💬 코멘트 추가</button>`);
+    }
+    if (!btns.length) return '';
+    return `<div class="detail-actions">${btns.join('')}</div>`;
+  }
+
+  function wireActions(panel, f) {
+    const on = (act, fn) => { const b = panel.querySelector(`[data-act="${act}"]`); if (b) b.addEventListener('click', fn); };
+    on('edit-spec', () => openUpload(f));
+    on('edit-plan', () => openPlan(f));
+    on('request-review', () => doTransition(() => features.requestReview(f.featureId)));
+    on('review-spec', () => openDoc(f, 'spec'));
+    on('create-pr', () => {
+      if (!confirm('Team-MINO-Android(base: develop)에 PR을 생성합니다.\n(mock: 실제 PR 대신 stub 정보)')) return;
+      doTransition(() => features.createPr(f.featureId));
     });
-    // 태스크 체크리스트
-    panel.querySelectorAll('input[data-task]').forEach((cb) =>
-      cb.addEventListener('change', (e) => {
-        tracking.toggleTask(f.id, cb.dataset.task, e.target.checked);
-        renderKpis(); renderDetail();
-      }));
-
-    // 인터랙션: 할당/상태 변경 → store(추후 Firestore) 반영
-    $('#sel-assignee').addEventListener('change', (e) => {
-      tracking.setAssignee(f.id, e.target.value);
-      renderKpis(); renderCenter(); renderDetail();
-    });
-    $('#sel-spec').addEventListener('change', (e) => {
-      tracking.setSpecStatus(f.id, e.target.value);
-      renderCenter(); renderDetail();
-    });
-    $('#sel-delivery').addEventListener('change', (e) => {
-      tracking.setDeliveryStatus(f.id, e.target.value);
-      renderCenter(); renderDetail();
-    });
-    panel.querySelectorAll('a[data-doc]').forEach((a) =>
-      a.addEventListener('click', (e) => {
-        e.preventDefault();
-        alert(`원문 보기는 다음 단계에서 연결됩니다:\n${a.dataset.doc}`);
-      }));
+    on('sim-merged', () => doTransition(() => features.syncFromWebhook(f.featureId, 'merged')));
+    on('sim-closed', () => doTransition(() => features.syncFromWebhook(f.featureId, 'closed')));
   }
 
-  // ===================== Editor (작성/편집) =====================
-  let editingId = null;
-  let editingDoc = 'spec';
-  const attr = (s) => String(s == null ? '' : s).replace(/&/g, '&amp;').replace(/"/g, '&quot;');
-  const escTxt = (s) => String(s == null ? '' : s).replace(/&/g, '&amp;').replace(/</g, '&lt;');
-
-  function itemRow(it) {
-    const opts = ITEM_STATUS.map((s) => `<option value="${s}" ${(it && it.specStatus) === s ? 'selected' : ''}>${ITEM_LABEL[s]}</option>`).join('');
-    return `<div class="list-row item-row" data-row="item">
-      <input class="k item-id" placeholder="LIST_LOAD" value="${attr(it && it.id)}" />
-      <input class="item-title" placeholder="기능명" value="${attr(it && it.title)}" />
-      <input class="grow item-trigger" placeholder="Trigger (언제)" value="${attr(it && it.trigger)}" />
-      <input class="grow item-response" placeholder="화면 반응 (결과)" value="${attr(it && it.response)}" />
-      <select class="item-status">${opts}</select>
-      <button class="btn-del" type="button" data-del>×</button></div>`;
-  }
-  function tbdRow(t) {
-    return `<div class="list-row" data-row="tbd">
-      <input class="k tbd-id" placeholder="TBD-1" value="${attr(t && t.id)}" />
-      <input class="k tbd-res" placeholder="결정주체" value="${attr(t && t.resolver)}" />
-      <input class="grow tbd-q" placeholder="미해결 질문" value="${attr(t && t.question)}" />
-      <button class="btn-del" type="button" data-del>×</button></div>`;
-  }
-  function taskRow(t) {
-    return `<div class="list-row" data-row="task">
-      <input class="k task-id" placeholder="T1" value="${attr(t && t.id)}" />
-      <input class="k task-mod" placeholder=":core:domain" value="${attr(t && t.module)}" />
-      <input class="grow task-title" placeholder="태스크 제목" value="${attr(t && t.title)}" />
-      <input class="k task-items" placeholder="LIST_LOAD, ..." value="${attr(t && (t.itemRefs || []).join(', '))}" />
-      <button class="btn-del" type="button" data-del>×</button></div>`;
-  }
-  function nonGoalRow(g) {
-    const txt = g && (typeof g === 'string' ? g : g.text);
-    return `<div class="list-row" data-row="nongoal">
-      <input class="grow ng-text" placeholder="이번 스펙에서 하지 않는 범위" value="${attr(txt)}" />
-      <button class="btn-del" type="button" data-del>×</button></div>`;
-  }
-  function stateRow(s) {
-    return `<div class="list-row" data-row="state">
-      <input class="k st-label" placeholder="로딩/빈/에러" value="${attr(s && s.label)}" />
-      <input class="grow st-text" placeholder="해당 상태의 화면·동작" value="${attr(s && s.text)}" />
-      <button class="btn-del" type="button" data-del>×</button></div>`;
+  async function doTransition(fn) {
+    const r = await fn();
+    if (!r.ok) { alert(r.error || '실패'); return; }
+    renderAll();
   }
 
-  function buildFormHtml(f) {
-    const enums = features.enums();
-    const typeOpts = (enums.type || ['Screen'])
-      .map((t) => `<option value="${t}" ${f.type === t ? 'selected' : ''}>${t}</option>`).join('');
-    const modOpts = features.modules().map((m) => `<option value="${m.id}">`).join('');
-    const dr = f.designRef || {};
-    return `
-      <div class="form-grid">
-        <div class="form-row"><label>ID *</label>
-          <input id="ed-id" placeholder="005-now-openchat" value="${attr(f.id)}" ${editingId ? 'disabled' : ''} /></div>
-        <div class="form-row"><label>제목 *</label>
-          <input id="ed-title" placeholder="지금 - 오픈채팅 목록" value="${attr(f.title)}" /></div>
-        <div class="form-row"><label>모듈</label>
-          <input id="ed-module" list="ed-modlist" placeholder="feature:now" value="${attr(f.module)}" />
-          <datalist id="ed-modlist">${modOpts}</datalist></div>
-        <div class="form-row"><label>타입</label><select id="ed-type">${typeOpts}</select></div>
-        <div class="form-row full"><label>트리거</label>
-          <input id="ed-trigger" placeholder="진입 트리거 한 줄" value="${attr(f.trigger)}" /></div>
-        <div class="form-row full"><label>동작 (Behavior)</label>
-          <textarea id="ed-behavior" placeholder="이 화면이 무엇을 하는지">${escTxt(f.behavior)}</textarea></div>
-        <div class="form-row"><label>Figma node</label>
-          <input id="ed-figma-node" placeholder="2001-0001" value="${attr(dr.figmaNode)}" /></div>
-        <div class="form-row"><label>Figma URL</label>
-          <input id="ed-figma-url" placeholder="https://figma.com/..." value="${attr(dr.url)}" /></div>
-        <div class="form-row full"><label>관련 feature (쉼표 구분)</label>
-          <input id="ed-related" placeholder="006-now-shorts" value="${attr((f.relatedFeatures || []).join(', '))}" /></div>
-      </div>
-
-      <div class="editor-section">
-        <div class="h"><span>비목표 (Out of scope)</span><button class="btn-add" type="button" data-add="nongoal">+ 추가</button></div>
-        <div id="ed-ng">${(f.nonGoals || []).map(nonGoalRow).join('')}</div>
-      </div>
-      <div class="editor-section">
-        <div class="h"><span>상태 / 예외</span><button class="btn-add" type="button" data-add="state">+ 추가</button></div>
-        <div id="ed-state">${(f.states || []).map(stateRow).join('')}</div>
-      </div>
-      <div class="editor-section">
-        <div class="h"><span>상세 기능 (Spec Items)</span><button class="btn-add" type="button" data-add="item">+ 추가</button></div>
-        <div id="ed-item">${(f.items || []).map(itemRow).join('')}</div>
-      </div>
-      <div class="editor-section">
-        <div class="h"><span>Open Questions (TBD)</span><button class="btn-add" type="button" data-add="tbd">+ 추가</button></div>
-        <div id="ed-tbd">${(f.tbds || []).map(tbdRow).join('')}</div>
-      </div>
-      <div class="editor-section">
-        <div class="h"><span>Tasks</span><button class="btn-add" type="button" data-add="task">+ 추가</button></div>
-        <div id="ed-task">${(f.tasks || []).map(taskRow).join('')}</div>
-      </div>`;
+  function reviewsHtml(f) {
+    if (!f.reviews || !f.reviews.length) return '';
+    const TAG = { approved: badge('승인', 'green'), changes_requested: badge('반려', 'red'), comment: badge('코멘트', 'blue') };
+    const items = f.reviews.slice().reverse().map((r) => {
+      const tag = TAG[r.decision] || badge(r.decision, 'gray');
+      const cs = (r.comments || []).map((c) => `<li><b>${esc(c.section || '전체')}</b> — ${esc(c.body)}</li>`).join('');
+      return `<div class="review-item">${tag} <span class="feat-sub">${esc(userName(r.reviewerUid))} · ${esc(r.reviewedAt)}</span>
+        ${cs ? `<ul class="review-comments">${cs}</ul>` : ''}</div>`;
+    }).join('');
+    return `<div class="detail-section"><h3>컨펌 이력</h3>${items}</div>`;
   }
 
-  function wireFormButtons() {
-    const body = $('#editor-body');
-    body.querySelectorAll('[data-add]').forEach((btn) =>
-      btn.addEventListener('click', () => {
-        const kind = btn.dataset.add;
-        const cont = { item: '#ed-item', tbd: '#ed-tbd', task: '#ed-task', nongoal: '#ed-ng', state: '#ed-state' }[kind];
-        const rowFn = { item: itemRow, tbd: tbdRow, task: taskRow, nongoal: nonGoalRow, state: stateRow }[kind];
-        body.querySelector(cont).insertAdjacentHTML('beforeend', rowFn());
-        wireDeletes();
-      }));
-    wireDeletes();
-  }
-
-  function switchPane(name) {
-    $('#pane-paste').classList.toggle('hidden', name !== 'paste');
-    $('#pane-form').classList.toggle('hidden', name !== 'form');
-    $('#editor-body').querySelectorAll('.editor-tabs button')
-      .forEach((b) => b.classList.toggle('active', b.dataset.pane === name));
-  }
-
-  const STAGE_LABEL = { spec: 'Spec', plan: 'Plan', tasks: 'Tasks' };
-
-  function openEditor(feature, docType) {
-    editingDoc = docType || 'spec';
-    const f = feature ? JSON.parse(JSON.stringify(feature)) : features.blank();
-    editingId = feature ? feature.id : null;
-    $('#editor-title').textContent = `${STAGE_LABEL[editingDoc]} ${feature ? '편집' : '작성'}`;
-    msg('', false);
-    if (editingDoc === 'spec') renderSpecEditor(f, !feature);
-    else renderDocEditor(f, editingDoc);
-    $('#editor-modal').classList.remove('hidden');
-  }
-
-  function renderSpecEditor(f, startPaste) {
-    $('#editor-body').innerHTML = `
-      <div class="editor-tabs">
-        <button type="button" data-pane="paste" class="${startPaste ? 'active' : ''}">📋 붙여넣기</button>
-        <button type="button" data-pane="form" class="${startPaste ? '' : 'active'}">✏️ 양식</button>
-      </div>
-      <div id="pane-paste" class="${startPaste ? '' : 'hidden'}">
-        <div class="paste-help">
-          <span>에이전트가 만든 스펙(마크다운)을 붙여넣고 [가져오기]를 누르세요.</span>
-          <button class="btn-add" type="button" id="btn-copy-prompt">spec 프롬프트 복사</button>
-        </div>
-        <textarea id="ed-paste" class="paste-area" placeholder="---&#10;id: 005-now-openchat&#10;title: ...&#10;module: feature:now&#10;---&#10;&#10;## 동작&#10;...&#10;&#10;## 수용 조건&#10;- AC1: ..."></textarea>
-        <button class="btn-primary" type="button" id="btn-import">가져오기 →</button>
-      </div>
-      <div id="pane-form" class="${startPaste ? 'hidden' : ''}">${buildFormHtml(f)}</div>
-    `;
-    $('#editor-body').querySelectorAll('.editor-tabs button')
-      .forEach((b) => b.addEventListener('click', () => switchPane(b.dataset.pane)));
-    $('#btn-import').addEventListener('click', doImport);
-    $('#btn-copy-prompt').addEventListener('click', copyPrompt);
-    wireFormButtons();
-  }
-
-  function renderDocEditor(f, docType) {
-    const raw = docType === 'plan' ? (f.planMd || '') : (f.tasksMd || '');
-    const help = docType === 'plan'
-      ? '레포 안 Claude Code로 plan을 생성해 붙여넣으세요 (docs/architecture·기존 모듈·design-system 참조).'
-      : '레포 안 Claude Code로 tasks를 생성해 붙여넣으세요 (plan·docs/conventions·Figma node 참조).';
-    $('#editor-body').innerHTML = `
+  // ===================== Upload (spec drag-drop + 검증) =====================
+  let uploadCtx = null; // { featureId|null, assets:[{name}] }
+  function openUpload(f) {
+    if (!auth.isDeveloper()) { alert('spec 업로드/수정은 개발자만 가능합니다.'); return; }
+    uploadCtx = { featureId: f ? f.featureId : null, assets: f ? (f.assets || []).map((a) => ({ name: a.name })) : [] };
+    $('#upload-title').textContent = f ? `spec 수정 · ${f.title}` : '새 스펙 업로드';
+    uploadMsg('', false);
+    const body = f ? f.specBody : '';
+    const figma = f ? (f.figmaSources || []).join('\n') : '';
+    $('#upload-body').innerHTML = `
       <div class="paste-help">
-        <span>${help}</span>
-        <button class="btn-add" type="button" id="btn-copy-prompt">${docType} 프롬프트 복사</button>
+        <span>로컬 <code>spec-gen</code> 산출물 <code>spec.md</code> 전문을 붙여넣거나 파일을 드롭하세요.
+        첫 줄 <code>&lt;!-- feature: slug --&gt;</code> 주석이 필요합니다.</span>
       </div>
-      <textarea id="ed-doc" class="paste-area" placeholder="${docType}.md (마크다운)">${escTxt(raw)}</textarea>
-      ${docType === 'tasks' ? '<div id="task-preview" class="task-preview"></div>' : ''}
-    `;
-    $('#btn-copy-prompt').addEventListener('click', copyPrompt);
-    if (docType === 'tasks') {
-      const upd = () => {
-        const t = window.MASCParseSpec($('#ed-doc').value).tasks;
-        $('#task-preview').innerHTML = t.length
-          ? `파싱된 태스크 ${t.length}개: ` + t.map((x) => `<span class="mono">${x.id || '?'}</span>`).join(' ')
-          : '아직 태스크가 인식되지 않았습니다 — "## Tasks" 섹션 + "- T1 [:module]: 제목" 형식.';
-      };
-      $('#ed-doc').addEventListener('input', upd);
-      upd();
-    }
+      <div id="dropzone" class="dropzone">spec.md / 이미지 파일을 여기로 drag-drop
+        <input type="file" id="file-input" multiple accept=".md,.png,.jpg,.jpeg" hidden />
+        <button class="btn-add" type="button" id="btn-pick">파일 선택</button></div>
+      <textarea id="up-spec" class="paste-area paste-tall" placeholder="<!-- feature: now-openchat -->\n# 제목\n\n## 1. 한눈에 보기\n...">${esc(body)}</textarea>
+      <div class="up-assets-wrap"><div class="lbl">업로드 이미지 (assets/)</div><div id="up-assets" class="up-assets"></div></div>
+      <label class="lbl" style="margin-top:8px">출처 Figma URL (줄당 1개)</label>
+      <textarea id="up-figma" class="paste-area" style="min-height:54px" placeholder="https://www.figma.com/design/...">${esc(figma)}</textarea>
+      <div id="up-errors" class="up-errors"></div>`;
+    renderUpAssets();
+    wireDropzone();
+    openModal('upload-modal');
   }
-
-  function doImport() {
-    const text = $('#ed-paste').value;
-    if (!text.trim()) return msg('붙여넣은 내용이 없습니다.');
-    const parsed = window.MASCParseSpec(text);
-    if (!parsed.title && !parsed.id) {
-      return msg('파싱 실패: 제목/ID를 찾지 못했습니다. frontmatter(--- 블록)나 # 제목을 확인하세요.');
-    }
-    if (editingId) parsed.id = editingId; // 편집 중엔 ID 고정
-    $('#pane-form').innerHTML = buildFormHtml(parsed);
-    wireFormButtons();
-    switchPane('form');
-    const n = parsed.items.length, t = parsed.tbds.length, k = parsed.tasks.length;
-    const g = parsed.nonGoals.length, s = parsed.states.length;
-    msg(`가져왔습니다 — 기능 ${n} · TBD ${t} · 비목표 ${g} · 상태 ${s} · Tasks ${k}. 검토 후 저장하세요.`, false);
+  function renderUpAssets() {
+    const el = $('#up-assets');
+    if (!uploadCtx.assets.length) { el.innerHTML = '<span class="feat-sub">없음</span>'; return; }
+    el.innerHTML = uploadCtx.assets.map((a, i) =>
+      `<span class="asset-chip mono">${esc(a.name)}<button data-rm="${i}" aria-label="삭제">×</button></span>`).join('');
+    el.querySelectorAll('button[data-rm]').forEach((b) =>
+      b.addEventListener('click', () => { uploadCtx.assets.splice(+b.dataset.rm, 1); renderUpAssets(); }));
   }
-
-  const STAGE_PROMPTS = {
-    spec: [
-      '당신은 안드로이드 기능 스펙 작성자입니다. 주어진 기획문서(PRD)와 Figma를 바탕으로',
-      '아래 마크다운 형식을 "정확히" 지켜 spec 초안을 출력하세요.',
-      '',
-      '---',
-      'id: <영소문자-숫자-하이픈, 예: 005-now-openchat>',
-      'title: <화면/기능 제목>',
-      'module: <예: feature:now>',
-      'type: Screen | Component | Infra',
-      'trigger: <진입 트리거 한 줄>',
-      'figmaNode: <노드 id, 선택>',
-      'figmaUrl: <Figma URL, 선택>',
-      'related: <관련 feature id, 쉼표 구분, 선택>',
-      '---',
-      '',
-      '# <title>',
-      '',
-      '## 동작',
-      '<이 기능이 무엇을/왜 하는지 2~4문장. 진입 전제조건이 있으면 함께>',
-      '',
-      '## 비목표',
-      '<이번 스펙에서 "하지 않는" 범위. 스코프 크립 방지. 없으면 "- 없음">',
-      '',
-      '## 상태/예외',
-      '- 로딩: <데이터 로딩 중 화면>',
-      '- 빈 상태: <표시할 데이터가 없을 때>',
-      '- 에러: <실패 시 동작 (재시도/메시지 등)>',
-      '',
-      '## 상세 기능 명세',
-      '| ID | 기능 | Trigger | 화면 반응 | 확정 |',
-      '|---|---|---|---|---|',
-      '| LIST_LOAD | 목록 로드 | <언제> | <…된다> | confirmed |',
-      '| <ID_2> | <기능명> | <언제> | <화면 반응> | partial |',
-      '',
-      '## Open Questions',
-      '- TBD-1 (기획/디자인/서버): <확인이 필요한 미해결 질문>',
-      '',
-      '규칙:',
-      '- "어떻게(구현)"가 아니라 "무엇/왜"에 집중. 불명확한 점은 추측 말고 Open Questions에 TBD로.',
-      '- 기능은 화면 인터랙션 단위로 잘게 쪼갠다. ID는 대문자 스네이크(LIST_LOAD), Trigger=언제 / 화면 반응=그 결과.',
-      '- 확정 열은 confirmed / partial / needs_policy / inferred / variant / out_of_scope 중 하나. 근거가 불충분하면 partial·needs_policy로.',
-      '- 비목표·상태/예외 항목은 "- 라벨: 내용" 한 줄 불릿으로 (대시보드 파싱용).',
-      '- 상태/예외는 Screen 기능이면 반드시 채울 것. Infra면 생략 가능.',
-      '- 위 형식 외 다른 텍스트는 출력하지 말 것.',
-    ].join('\n'),
-    plan: [
-      '[Team-MINO-Android 레포 안에서 실행하세요]',
-      '당신은 이 안드로이드 프로젝트의 아키텍트입니다. 아래 문서를 직접 읽고 이 기능의 plan.md를 작성하세요:',
-      '- docs/architecture/modularization.md, feature-module.md, feature-navigation.md',
-      '- 기존 모듈(feature/sample, feature/home) 구현 패턴',
-      '- core/design-system/README.md (재사용 컴포넌트 우선)',
-      '확정된 spec(아래 첨부)을 기술 설계로 번역하세요. constitution 게이트(모듈 의존성, api/impl 분리,',
-      'MVI 타입은 :core:common:android, Compose Lint, 디자인토큰 우선)를 준수.',
-      '',
-      '출력(마크다운):',
-      '## 모듈 구성',
-      '## MVI 계약 (Intent / UiState / SideEffect)',
-      '   - Intent: 사용자/시스템 액션 (예: OnMarkerClick, OnRetry)',
-      '   - UiState: spec의 상태/예외(로딩·빈·에러)를 빠짐없이 반영',
-      '   - SideEffect: 일회성 효과 (네비게이션 이동, 토스트 등)',
-      '## 데이터 (Repository / UseCase / domain·data 모듈)',
-      '   - 호출 흐름과 어느 모듈에 둘지, 신규 vs 기존 재사용',
-      '## 네비게이션',
-      '## design-system 매핑 (재사용 vs 신규)',
-      '## Pre-Implementation Gate 체크',
-      '',
-      '--- 확정된 spec ---',
-      '<여기에 spec 본문 붙여넣기>',
-    ].join('\n'),
-    tasks: [
-      '[Team-MINO-Android 레포 안에서 실행하세요]',
-      '당신은 이 기능을 구현 가능한 태스크로 분해합니다. 아래를 참고:',
-      '- 이 기능의 plan.md (아래 첨부)',
-      '- docs/conventions/* (commit-message, compose-lint, pull-request, branch-naming)',
-      '- Figma node (디자인 기준)',
-      '',
-      '출력(마크다운): "## Tasks" 섹션에 태스크를 나열. 각 줄은 다음 형식을 반드시 지킬 것:',
-      '- T1 [:core:domain]: <태스크 제목> (LIST_LOAD, LIST_SORT)',
-      '   - 끝의 (…)는 이 태스크가 구현하는 spec 기능 ID(대문자 스네이크) 목록 (추적성). 없으면 생략.',
-      '각 태스크 아래에 동작 명세 / 디자인 기준(Figma node) / 완료 조건(DoD)을 들여쓰기로 적되,',
-      '태스크 줄 자체는 위 "- T# [:module]: 제목 (ITEM_ID..)" 형식 유지 (대시보드 체크리스트 파싱용).',
-      '태스크 = 원자적 커밋 단위. 테스트를 앞에 둘 것.',
-      'spec의 모든 기능(item)이 최소 하나의 태스크로 덮이도록 할 것.',
-      '',
-      '--- 이 기능의 plan ---',
-      '<여기에 plan 본문 붙여넣기>',
-    ].join('\n'),
-  };
-
-  function copyPrompt() {
-    const text = STAGE_PROMPTS[editingDoc] || STAGE_PROMPTS.spec;
-    const done = () => msg(`${STAGE_LABEL[editingDoc]} 프롬프트를 복사했습니다.`, false);
-    if (navigator.clipboard && navigator.clipboard.writeText) {
-      navigator.clipboard.writeText(text).then(done, () => msg('복사 실패 — 직접 선택해 복사하세요.'));
-    } else {
-      msg('이 브라우저는 자동 복사를 지원하지 않습니다.');
-    }
+  function addAssetNames(names) {
+    names.forEach((n) => { if (!uploadCtx.assets.some((a) => a.name === n)) uploadCtx.assets.push({ name: n }); });
+    renderUpAssets();
   }
-
-  function wireDeletes() {
-    $('#editor-body').querySelectorAll('[data-del]').forEach((btn) => {
-      btn.onclick = () => btn.closest('.list-row').remove();
+  function wireDropzone() {
+    const dz = $('#dropzone'); const fi = $('#file-input');
+    $('#btn-pick').addEventListener('click', () => fi.click());
+    fi.addEventListener('change', () => handleFiles(fi.files));
+    ['dragover', 'dragenter'].forEach((ev) => dz.addEventListener(ev, (e) => { e.preventDefault(); dz.classList.add('over'); }));
+    ['dragleave', 'drop'].forEach((ev) => dz.addEventListener(ev, (e) => { e.preventDefault(); dz.classList.remove('over'); }));
+    dz.addEventListener('drop', (e) => handleFiles(e.dataTransfer.files));
+  }
+  function handleFiles(fileList) {
+    const files = Array.from(fileList || []);
+    const imgs = [];
+    files.forEach((file) => {
+      if (/\.md$/i.test(file.name)) {
+        const reader = new FileReader();
+        reader.onload = () => { $('#up-spec').value = reader.result; };
+        reader.readAsText(file);
+      } else if (/\.(png|jpe?g)$/i.test(file.name)) {
+        imgs.push(file.name);
+      }
     });
+    if (imgs.length) addAssetNames(imgs);
   }
+  function uploadMsg(t, err = true) { const el = $('#upload-msg'); el.textContent = t; el.classList.toggle('error', err); }
 
-  function closeEditor() {
-    $('#editor-modal').classList.add('hidden');
-    editingId = null;
-  }
-
-  function collectRows(sel, fields) {
-    return [...$('#editor-body').querySelectorAll(`${sel} .list-row`)].map((row) => {
-      const o = {};
-      Object.entries(fields).forEach(([key, cls]) => {
-        const inp = row.querySelector(cls);
-        o[key] = inp ? inp.value.trim() : '';
-      });
-      return o;
-    }).filter((o) => Object.values(o).some((v) => v));
-  }
-
-  function saveEditor() {
-    if (editingDoc === 'spec') return saveSpec();
-    return saveDoc();
-  }
-
-  function saveDoc() {
-    const f = features.get(editingId);
-    if (!f) return msg('대상 스펙을 찾지 못했습니다.');
-    const raw = $('#ed-doc').value;
-    if (editingDoc === 'plan') {
-      f.planMd = raw;
-      f.sources = Object.assign({}, f.sources, { plan: `docs/specs/${f.id}/plan.md` });
-    } else {
-      f.tasksMd = raw;
-      f.tasks = window.MASCParseSpec(raw).tasks;
-      f.sources = Object.assign({}, f.sources, { tasks: `docs/specs/${f.id}/tasks.md` });
-    }
-    features.save(f);
-    closeEditor();
-    select(f.id);
-    renderAll();
-  }
-
-  function saveSpec() {
-    const v = (sel) => ($(sel).value || '').trim();
-    const id = v('#ed-id');
-    const title = v('#ed-title');
-    if (!id) return msg('ID는 필수입니다.');
-    if (!/^[a-z0-9-]+$/.test(id)) return msg('ID는 영소문자/숫자/하이픈만 사용하세요.');
-    if (!title) return msg('제목은 필수입니다.');
-    if (!editingId && features.get(id)) return msg('이미 존재하는 ID입니다.');
-
-    const existing = editingId ? features.get(editingId) : null;
-    const feature = Object.assign({}, existing || {}, {
-      id, title,
-      module: v('#ed-module'),
-      type: $('#ed-type').value,
-      trigger: v('#ed-trigger'),
-      behavior: v('#ed-behavior'),
-      designRef: { figmaNode: v('#ed-figma-node'), url: v('#ed-figma-url') },
-      items: collectRows('#ed-item', { id: '.item-id', title: '.item-title', trigger: '.item-trigger', response: '.item-response', specStatus: '.item-status' })
-        .filter((o) => o.id || o.title || o.trigger || o.response)
-        .map((o) => Object.assign(o, { specStatus: o.specStatus || 'confirmed' })),
-      tbds: collectRows('#ed-tbd', { id: '.tbd-id', resolver: '.tbd-res', question: '.tbd-q' }),
-      tasks: collectRows('#ed-task', { id: '.task-id', module: '.task-mod', title: '.task-title', refs: '.task-items' })
-        .filter((o) => o.id || o.title)
-        .map((t) => ({ id: t.id, module: t.module, title: t.title, itemRefs: t.refs ? t.refs.split(/[,\s]+/).map((s) => s.trim()).filter(Boolean) : [] })),
-      nonGoals: collectRows('#ed-ng', { text: '.ng-text' }).map((o) => o.text),
-      states: collectRows('#ed-state', { label: '.st-label', text: '.st-text' }),
-      relatedFeatures: v('#ed-related').split(',').map((s) => s.trim()).filter(Boolean),
-      sources: (existing && existing.sources && existing.sources.spec)
-        ? existing.sources
-        : { spec: `docs/specs/${id}/spec.md`, plan: '', tasks: '' },
-    });
-    features.save(feature);
-    closeEditor();
-    select(feature.id);
-    renderAll();
-  }
-  function msg(t, error = true) {
-    const el = $('#editor-msg');
-    el.textContent = t;
-    el.classList.toggle('error', error);
-  }
-
-  function confirmSpec(f) {
-    const tbdN = (f.tbds || []).length;
-    if (tbdN > 0 && !window.confirm(`미해결 TBD ${tbdN}건이 남아있습니다.\n그래도 "확정"하시겠습니까?`)) return;
-    const unconfirmed = (f.items || []).filter((it) => it.specStatus && it.specStatus !== 'confirmed');
-    if (unconfirmed.length &&
-      !window.confirm(`확정되지 않은 기능 ${unconfirmed.length}건(${unconfirmed.map((i) => i.id).join(', ')})이 있습니다.\n그래도 "확정"하시겠습니까?`)) return;
-    tracking.setSpecStatus(f.id, 'Confirmed');
-    renderAll();
-    renderDetail();
-  }
-
-  /**
-   * 확정된 feature → Team-MINO-Android(base: develop) PR 생성.
-   * Phase 0: stub(mock PR 정보). Phase 2에서 GitHub App 봇(Firebase Functions)이
-   *   feature/<issue>-<slug> 브랜치에 docs/specs/<id>/{spec,plan,tasks}.md 를 커밋하고
-   *   PR(제목=feature title, 본문 Closes #N)을 여는 로직으로 교체된다.
-   * 머지 감지(웹훅)는 Phase 3 → tracking.markMerged() → Published.
-   */
-  function createPr(f) {
-    const t = tracking.get(f.id);
-    const planExists = !!(f.planMd && f.planMd.trim());
-    if (t.specStatus !== 'Confirmed' || !planExists || !(f.tasks || []).length) {
-      window.alert('PR 생성은 spec 확정 + plan + tasks 가 모두 완료된 후 가능합니다.');
+  async function saveUpload() {
+    const specBody = $('#up-spec').value || '';
+    if (!specBody.trim()) return uploadMsg('붙여넣은 내용이 없습니다.');
+    const assetNames = uploadCtx.assets.map((a) => a.name);
+    const res = V.validateSpec(specBody, assetNames);
+    const errBox = $('#up-errors');
+    if (!res.ok) {
+      errBox.innerHTML = '<div class="lbl">구조 검증 실패</div>' +
+        res.errors.map((e) => `<div class="up-err"><span class="ecode">${e.code}</span> ${esc(e.msg)}</div>`).join('');
+      uploadMsg(`검증 실패 ${res.errors.length}건 — 수정 후 다시 저장하세요.`);
       return;
     }
-    if (!window.confirm('Team-MINO-Android(base: develop)에 이 스펙의 PR을 생성합니다.\n(Phase 0: 실제 PR 대신 mock 정보로 연결됩니다.)')) return;
-    const slug = String(f.id).replace(/[^a-z0-9]+/gi, '-').toLowerCase().replace(/(^-|-$)/g, '');
-    const num = 100 + Math.floor(Math.random() * 900); // stub 번호 (실제는 봇이 반환)
-    tracking.openPr(f.id, {
-      prNumber: num,
-      prUrl: `https://github.com/mash-up-kr/Team-MINO-Android/pull/${num}`,
-      branch: `feature/0-${slug}`, // 이슈번호(0)는 Phase 2에서 실제 연결
+    errBox.innerHTML = '';
+    uploadMsg('저장 중…', false);
+    const figmaSources = ($('#up-figma').value || '').split('\n').map((s) => s.trim()).filter(Boolean);
+    const r = await features.saveSpec({
+      featureId: uploadCtx.featureId, specBody,
+      figmaSources, assets: uploadCtx.assets.map((a) => ({ name: a.name, storagePath: '' })),
     });
-    window.alert(`PR(stub) #${num} 생성됨 · prState: open\n실제 PR 자동 생성은 Phase 2(GitHub App 봇)에서 연결됩니다.`);
-    renderAll();
-    renderDetail();
+    if (!r.ok) return uploadMsg(r.error || '저장 실패');
+    closeModal('upload-modal');
+    if (r.invalidated) alert('승인된 spec을 수정해 무효화되었습니다 → 작성중으로 복귀, plan은 stale 처리됩니다.');
+    select(r.feature.featureId); renderAll();
+  }
+
+  // ===================== Plan 붙여넣기 =====================
+  let planCtx = null;
+  function openPlan(f) {
+    planCtx = f.featureId;
+    $('#plan-title').textContent = `plan 붙여넣기 · ${f.title}`;
+    $('#plan-msg').textContent = '';
+    $('#plan-body').innerHTML = `
+      <div class="paste-help"><span>레포 체크아웃 안에서 <code>plan-gen</code>으로 생성한 plan.md를 붙여넣으세요
+      (<code>## 참고 문서</code> 포함). spec 승인 후에만 가능합니다.</span></div>
+      <textarea id="pl-body" class="paste-area paste-tall" placeholder="## 모듈 구성\n## MVI 계약\n...">${esc(f.planBody || '')}</textarea>`;
+    openModal('plan-modal');
+  }
+  async function savePlan() {
+    const body = $('#pl-body').value || '';
+    if (!body.trim()) { $('#plan-msg').textContent = '내용이 없습니다.'; return; }
+    $('#plan-msg').textContent = '저장 중…';
+    const r = await features.savePlan(planCtx, body);
+    if (!r.ok) { $('#plan-msg').textContent = r.error; return; }
+    closeModal('plan-modal'); select(planCtx); renderAll();
   }
 
   // ===================== Boot =====================
-  if (auth.currentUser()) showApp(); else showLogin();
+  if (FB) {
+    renderGithubLogin();
+    auth.onAuthChange((user) => { if (user) showApp(); else showLogin(); });
+  } else {
+    renderLoginUsers();
+    if (auth.currentUser()) showApp(); else showLogin();
+  }
 })();

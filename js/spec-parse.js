@@ -1,169 +1,106 @@
+/**
+ * MASC spec 파서 (v2)
+ * ----------------------------------------------------------------------
+ * 신 포맷 spec.md에서 메타만 추출한다. 본문은 데이터로 파싱하지 않는다
+ * (구 items/frontmatter 모델 폐기 — docs/validation.md).
+ *   - slug:        첫 줄 <!-- feature: {slug} --> 주석
+ *   - title:       H1 (# ...)
+ *   - specVersion: "변경 이력" 표 최신(마지막) 데이터 행의 버전명 (예: v0.1.0)
+ * 또한 검증기(validate.js)가 공유하는 섹션/표 헬퍼를 노출한다.
+ */
 (function () {
-  const SECTION_ALIASES = {
-    behavior: ['동작', 'behavior', '개요', '요약', 'summary'],
-    nongoal: ['비목표', '비 목표', 'non-goals', 'non goals', 'nongoals', 'out of scope', 'scope'],
-    states: ['상태/예외', '상태·예외', '상태', '예외', 'states', 'state', 'edge cases', 'edge case'],
-    items: ['상세 기능 명세', '기능 명세', '상세 기능', '기능 목록', 'spec items', 'items', '수용 조건', '수용조건', 'acceptance criteria', 'acceptance', 'ac'],
-    tbd: ['open questions', 'open question', 'tbd', '미해결', '미해결 결정', 'clarify', 'clarification'],
-    tasks: ['tasks', 'task', '작업 목록', '작업'],
-  };
+  const NL = (src) => String(src == null ? '' : src).replace(/\r\n/g, '\n').split('\n');
 
-  const ITEM_STATUS = ['confirmed', 'partial', 'needs_policy', 'inferred', 'variant', 'out_of_scope'];
-  const STATUS_ALIASES = {
-    confirmed: ['confirmed', '확정'],
-    partial: ['partial', '일부확정', '일부 확정', '일부'],
-    needs_policy: ['needs_policy', 'needs policy', '정책필요', '정책 필요', '정책'],
-    inferred: ['inferred', '추론'],
-    variant: ['variant', '후보안', '후보', '대안'],
-    out_of_scope: ['out_of_scope', 'out of scope', '범위외', '범위 외', '제외'],
-  };
-
-  function normStatus(v) {
-    const s = String(v || '').trim().toLowerCase();
-    if (!s) return 'confirmed';
-    for (const [kind, arr] of Object.entries(STATUS_ALIASES)) {
-      if (arr.some((a) => s === a || s.startsWith(a))) return kind;
-    }
-    return ITEM_STATUS.includes(s) ? s : 'confirmed';
+  // 첫 줄 슬러그 주석
+  function parseSlug(src) {
+    const first = (NL(src)[0] || '').trim();
+    const m = first.match(/^<!--\s*feature:\s*([^\s>]+)\s*-->$/);
+    return m ? m[1] : null;
   }
 
-  function sectionKind(heading) {
-    const h = heading.trim().toLowerCase().replace(/[()]/g, '').trim();
-    for (const [kind, arr] of Object.entries(SECTION_ALIASES)) {
-      if (arr.some((a) => h === a || h.startsWith(a))) return kind;
+  // H1 제목
+  function parseTitle(src) {
+    for (const line of NL(src)) {
+      const m = line.match(/^#\s+(.+?)\s*$/);
+      if (m) return m[1];
     }
     return null;
   }
 
-  function stripQuotes(v) {
-    v = v.trim();
-    if ((v.startsWith('"') && v.endsWith('"')) || (v.startsWith("'") && v.endsWith("'"))) {
-      return v.slice(1, -1);
-    }
-    return v;
+  // H2 헤더 목록 (숫자 접두사 보존한 원문 + 정규화 텍스트)
+  function h2List(src) {
+    return NL(src)
+      .map((l) => l.match(/^##\s+(.+?)\s*$/))
+      .filter(Boolean)
+      .map((m) => ({ raw: m[1], norm: m[1].replace(/^\d+\.\s*/, '').trim() }));
   }
 
-  function parse(text) {
-    const r = {
-      id: '', title: '', module: '', type: 'Screen', trigger: '', behavior: '',
-      designRef: { figmaNode: '', url: '' },
-      items: [], tbds: [], tasks: [], relatedFeatures: [],
-      nonGoals: [], states: [],
-    };
-    if (!text) return r;
-    let body = String(text).replace(/\r\n/g, '\n');
-
-    const fm = body.match(/^﻿?---\n([\s\S]*?)\n---\n?/);
-    if (fm) {
-      fm[1].split('\n').forEach((line) => {
-        const i = line.indexOf(':');
-        if (i < 0) return;
-        const key = line.slice(0, i).trim().toLowerCase();
-        const val = stripQuotes(line.slice(i + 1));
-        if (key === 'id') r.id = val;
-        else if (key === 'title') r.title = val;
-        else if (key === 'module') r.module = val;
-        else if (key === 'type') r.type = val || 'Screen';
-        else if (key === 'trigger') r.trigger = val;
-        else if (key === 'figmanode') r.designRef.figmaNode = val;
-        else if (key === 'figmaurl') r.designRef.url = val;
-        else if (key === 'related' || key === 'relatedfeatures') {
-          r.relatedFeatures = val.split(',').map((s) => s.trim()).filter(Boolean);
-        }
-      });
-      body = body.slice(fm[0].length);
+  // 특정 H2 섹션 본문 블록(해당 H2 다음 줄 ~ 다음 H2 직전) 반환
+  function sectionBlock(src, normTitle) {
+    const lines = NL(src);
+    let start = -1;
+    for (let i = 0; i < lines.length; i++) {
+      const m = lines[i].match(/^##\s+(.+?)\s*$/);
+      if (m && m[1].replace(/^\d+\.\s*/, '').trim() === normTitle) { start = i + 1; break; }
     }
+    if (start < 0) return '';
+    const out = [];
+    for (let i = start; i < lines.length; i++) {
+      if (/^##\s+/.test(lines[i])) break;
+      out.push(lines[i]);
+    }
+    return out.join('\n');
+  }
 
-    const sections = { behavior: [], nongoal: [], states: [], items: [], tbd: [], tasks: [] };
-    const preamble = [];
-    let cur = null;
-    body.split('\n').forEach((raw) => {
-      const line = raw.replace(/\s+$/, '');
-      const h1 = line.match(/^#\s+(.+)/);
-      if (h1) { if (!r.title) r.title = h1[1].trim(); cur = null; return; }
-      const h2 = line.match(/^#{2,4}\s+(.+)/);
-      if (h2) { cur = sectionKind(h2[1]); return; }
-      if (cur) sections[cur].push(line);
-      else if (line.trim()) preamble.push(line);
-    });
-
-    r.behavior = (sections.behavior.join('\n').trim()) || preamble.join('\n').trim();
-
-    const isBullet = (l) => /^\s*[-*]\s+/.test(l);
-    const bulletText = (l) => l.replace(/^\s*[-*]\s+/, '');
-    const isTableRow = (l) => /^\s*\|/.test(l);
-    const isDivider = (l) => /^\s*\|?[\s:|-]+\|?\s*$/.test(l) && l.includes('-');
+  // 마크다운 표를 {header:[], rows:[[]]} 들로 추출 (구분선 기준)
+  function parseTables(block) {
+    const lines = NL(block);
+    const isRow = (l) => /^\s*\|.*\|\s*$/.test(l);
+    const isDiv = (l) => /^\s*\|?[\s:|-]+\|?\s*$/.test(l) && l.includes('-');
     const cells = (l) => l.replace(/^\s*\|/, '').replace(/\|\s*$/, '').split('|').map((c) => c.trim());
-
-    // --- items: 테이블(| ID | 기능 | Trigger | 화면 반응 | 확정 |) 우선, 없으면 불릿(레거시 AC) ---
-    const itemTableRows = sections.items.filter(isTableRow).filter((l) => !isDivider(l));
-    if (itemTableRows.length) {
-      itemTableRows.forEach((l, n) => {
-        const c = cells(l);
-        const first = (c[0] || '').toLowerCase();
-        if (n === 0 && /(^id$|feature id|기능 id|^기능$)/.test(first)) return; // 헤더 스킵
-        const id = (c[0] || '').replace(/`/g, '').trim();
-        if (!id) return;
-        r.items.push({
-          id,
-          title: (c[1] || '').trim(),
-          trigger: (c[2] || '').trim(),
-          response: (c[3] || '').trim(),
-          specStatus: normStatus(c[4]),
-        });
-      });
-    } else {
-      sections.items.filter(isBullet).forEach((l, n) => {
-        const m = bulletText(l).match(/^([A-Z][A-Z0-9_]+|AC[-\s]?\d+)?\s*[:：\-]?\s*(.*)$/i);
-        const id = (m && m[1] ? m[1] : 'ITEM_' + (n + 1)).replace(/\s/g, '');
-        r.items.push({ id, title: '', trigger: '', response: (m ? m[2] : bulletText(l)).trim(), specStatus: 'confirmed' });
-      });
-    }
-
-    sections.tbd.filter(isBullet).forEach((l, n) => {
-      const m = bulletText(l).match(/^(TBD[-\s]?\d+)?\s*(?:\(([^)]*)\))?\s*[:：\-]?\s*(.*)$/i);
-      r.tbds.push({
-        id: (m && m[1] ? m[1] : 'TBD-' + (n + 1)).replace(/\s/g, ''),
-        resolver: (m && m[2] ? m[2] : '').trim(),
-        question: (m ? m[3] : bulletText(l)).trim(),
-      });
-    });
-
-    sections.tasks.filter(isBullet).forEach((l, n) => {
-      const m = bulletText(l).match(/^(T\d+)?\s*(?:\[([^\]]*)\])?\s*[:：\-]?\s*(.*)$/i);
-      let title = (m ? m[3] : bulletText(l)).trim();
-      const itemRefs = [];
-      const am = title.match(/\(([^)]*)\)\s*$/);
-      if (am) {
-        am[1].split(/[,\s]+/).forEach((tok) => {
-          const t = tok.trim().toUpperCase().replace(/\s/g, '');
-          if (/^[A-Z][A-Z0-9_]+$/.test(t)) itemRefs.push(t);
-        });
-        if (itemRefs.length) title = title.slice(0, am.index).trim();
+    const tables = [];
+    for (let i = 0; i < lines.length; i++) {
+      if (isRow(lines[i]) && i + 1 < lines.length && isDiv(lines[i + 1])) {
+        const header = cells(lines[i]);
+        const rows = [];
+        i += 2;
+        while (i < lines.length && isRow(lines[i]) && !isDiv(lines[i])) { rows.push(cells(lines[i])); i++; }
+        i--;
+        tables.push({ header, rows });
       }
-      r.tasks.push({
-        id: (m && m[1] ? m[1] : 'T' + (n + 1)),
-        module: (m && m[2] ? m[2] : '').trim(),
-        title,
-        itemRefs,
-      });
-    });
-
-    const topBullet = (l) => /^[-*]\s+/.test(l);
-    sections.nongoal.filter(topBullet).forEach((l) => {
-      const txt = bulletText(l).trim();
-      if (txt && !/^없음\.?$/.test(txt)) r.nonGoals.push(txt);
-    });
-    sections.states.filter(topBullet).forEach((l) => {
-      const txt = bulletText(l).trim();
-      const m = txt.match(/^([^:：]{1,20})[:：]\s*(.*)$/);
-      if (m) r.states.push({ label: m[1].trim(), text: m[2].trim() });
-      else if (txt) r.states.push({ label: '', text: txt });
-    });
-
-    return r;
+    }
+    return tables;
   }
 
-  if (typeof window !== 'undefined') window.MASCParseSpec = parse;
-  if (typeof module !== 'undefined' && module.exports) module.exports = parse;
+  // 본문 내 이미지 참조: ![](path) 의 경로 목록
+  function imageRefs(block) {
+    const refs = [];
+    const re = /!\[[^\]]*\]\(([^)\s]+)[^)]*\)/g;
+    let m;
+    while ((m = re.exec(block)) !== null) refs.push(m[1]);
+    return refs;
+  }
+
+  // 변경 이력 표 최신 행 버전명
+  function parseVersion(src) {
+    const block = sectionBlock(src, '변경 이력');
+    const tables = parseTables(block);
+    if (!tables.length || !tables[0].rows.length) return null;
+    const last = tables[0].rows[tables[0].rows.length - 1];
+    const v = (last[0] || '').trim();
+    return /^v\d+\.\d+\.\d+$/.test(v) ? v : null;
+  }
+
+  function parseMeta(src) {
+    return {
+      slug: parseSlug(src),
+      title: parseTitle(src),
+      specVersion: parseVersion(src),
+    };
+  }
+
+  window.MASCSpec = {
+    parseMeta, parseSlug, parseTitle, parseVersion,
+    h2List, sectionBlock, parseTables, imageRefs,
+  };
 })();
