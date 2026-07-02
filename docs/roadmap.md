@@ -86,7 +86,7 @@
 - [x] 무효화 연쇄 — approved 후 spec 수정 시: `spec_draft` 복귀 + `planStale=true` (로직)
 - [m] 무효화 시 열린 PR 자동 close + 새 버전 링크 코멘트 — 플래그만, **실제 GitHub close 남음**
 - [ ] specVersion 증가(새 브랜치/PR) 처리
-- [~] (ops) `Team-MINO-Android` CODEOWNERS `docs/specs/** @안드3인` — **PR #54 오픈**, 머지 대기 ([mino_android.md] 소관)
+- [x] (ops) `Team-MINO-Android` CODEOWNERS `docs/specs/** @안드3인` — **PR #54 머지 완료**. (강제하려면 develop 브랜치 보호에 "Require review from Code Owners" 활성화 필요) ([mino_android.md] 소관)
 
 → **M0–M4 완료 = MVP.** 8개 상태 전부 도달·전이 완결.
 > 현재: 8상태 전부 mock으로 도달·전이 가능(파이프라인 1바퀴 검증됨). 남은 건 **실 백엔드 연결**.
