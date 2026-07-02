@@ -48,7 +48,7 @@
 - [x] (ops) B-1. Firebase 프로젝트 + **Blaze** + Auth(GitHub)/Firestore/Storage + webConfig
 - [x] (ops) B-2. firebase-config.js 채움 · secrets 등록 · rules/functions 배포
 - [~] (ops) C. Webhook URL 역기입 + PR 라운드트립 확인 — **웹훅 URL 역기입·HMAC ping 204 확인 완료**, 전체 PR 라운드트립(pr_open→merged)은 M3(PR 생성 배선) 후 검증
-- [ ] (ops) GitHub Pages ↔ Functions CORS (Functions에 CORS_ORIGIN 설정 완료, 도메인 확인만)
+- [~] (ops) GitHub Pages ↔ Functions CORS — **Pages 활성화(main/root, mash-up-kr.github.io/mino-android-spec-center)**, CORS_ORIGIN 일치. 빌드 후 앱 로드·함수 호출 최종 확인 남음(+ Firebase Auth 승인 도메인에 `mash-up-kr.github.io` 추가 필요)
 
 > 범례 추가: `[m]` = mock(localStorage) 구현 완료, **실연결(Firebase/Functions) 남음**.
 
@@ -86,7 +86,7 @@
 - [x] 무효화 연쇄 — approved 후 spec 수정 시: `spec_draft` 복귀 + `planStale=true` (로직)
 - [m] 무효화 시 열린 PR 자동 close + 새 버전 링크 코멘트 — 플래그만, **실제 GitHub close 남음**
 - [ ] specVersion 증가(새 브랜치/PR) 처리
-- [ ] (ops) `Team-MINO-Android` CODEOWNERS `docs/specs/** @owner` ([mino_android.md] 소관)
+- [~] (ops) `Team-MINO-Android` CODEOWNERS `docs/specs/** @안드3인` — **PR #54 오픈**, 머지 대기 ([mino_android.md] 소관)
 
 → **M0–M4 완료 = MVP.** 8개 상태 전부 도달·전이 완결.
 > 현재: 8상태 전부 mock으로 도달·전이 가능(파이프라인 1바퀴 검증됨). 남은 건 **실 백엔드 연결**.
