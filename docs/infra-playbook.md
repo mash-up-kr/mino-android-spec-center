@@ -81,16 +81,16 @@ firebase deploy --only functions
 
 `Team-MINO-Android` 레포 `.github/CODEOWNERS`:
 ```
-specs/** @<리뷰 담당 핸들>
+docs/specs/** @<리뷰 담당 핸들>
 ```
 
 ---
 
 ## 체크 (완료 표시)
-- [ ] A: GitHub App 등록 + 설치 → App ID/Client ID/Secret/Webhook secret 확보
-- [ ] B-1: Firebase 프로젝트 + Blaze + Auth(GitHub)/Firestore/Storage + webConfig
-- [ ] B-2: firebase-config.js 채움 · secrets 등록 · rules/functions 배포
-- [ ] C: Webhook URL 역기입 + PR 라운드트립 확인
-- [ ] D: CODEOWNERS
+- [x] A: GitHub App 등록 + 설치 → App ID/Client ID/Secret/Webhook secret 확보
+- [x] B-1: Firebase 프로젝트 + Blaze + Auth(GitHub)/Firestore/Storage + webConfig
+- [x] B-2: firebase-config.js 채움 · secrets 등록 · rules/functions 배포
+- [~] C: Webhook URL 역기입 + PR 라운드트립 확인 — 역기입·HMAC ping 204 확인 완료, 전체 PR 라운드트립은 M3 후
+- [ ] D: CODEOWNERS (`docs/specs/** @<핸들>`)
 
 > 후순위(Post-MVP): 토큰 평문 → Secret Manager, revoke UI.

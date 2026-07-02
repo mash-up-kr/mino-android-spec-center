@@ -78,7 +78,7 @@ exports.createSpecPR = onCall(async (request) => {
   const slug = f.slug;
   const version = f.specVersion || 'v0.1.0';
   const branch = `docs/spec-${slug}-${version}`;
-  const dir = `specs/${slug}`;
+  const dir = `docs/specs/${slug}`;
 
   try {
     // ① base develop 의 최신 커밋 → 새 브랜치 ref 생성

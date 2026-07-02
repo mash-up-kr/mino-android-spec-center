@@ -8,7 +8,7 @@
 
 ```
 features/{featureId}
-  ├─ slug: string              # specs/{slug}/ 경로 · spec 첫 줄 <!-- feature: {slug} --> 와 일치
+  ├─ slug: string              # docs/specs/{slug}/ 경로 · spec 첫 줄 <!-- feature: {slug} --> 와 일치
   ├─ title: string             # spec.md H1
   ├─ status: enum              # state-machine.md 8상태
   ├─ planStale: boolean        # 무효화 연쇄 시 true
@@ -44,7 +44,7 @@ users/{uid}
 features/{featureId}/assets/{filename}.png
 ```
 - drag-drop 업로드 → Storage 저장 → `features.assets[]`에 `{name, storagePath}` 기록.
-- 원본 = SoT 일부. PR 커밋 시 `specs/{slug}/assets/`에 동봉해 레포에서도 상대경로 렌더.
+- 원본 = SoT 일부. PR 커밋 시 `docs/specs/{slug}/assets/`에 동봉해 레포에서도 상대경로 렌더.
 
 ## 3. 보안 규칙 (스케치)
 

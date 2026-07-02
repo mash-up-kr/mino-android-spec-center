@@ -44,10 +44,10 @@
 - [x] GitHub 로그인(팝업) + `users.role` 온보딩(역할 선택 모달)
 - [ ] (M3) 개발자 App authorize 토큰으로 PR — createPr는 Function 연결, 토큰 검증 남음
 ### ops (7장 플레이북 — admin 직접 실행, docs/infra-playbook.md)
-- [ ] (ops) A. GitHub App 등록 → App ID/Client ID/Secret/Webhook secret
-- [ ] (ops) B-1. Firebase 프로젝트 + **Blaze** + Auth(GitHub)/Firestore/Storage + webConfig
-- [ ] (ops) B-2. firebase-config.js 채움 · secrets 등록 · rules/functions 배포
-- [ ] (ops) C. Webhook URL 역기입 + PR 라운드트립 확인
+- [x] (ops) A. GitHub App 등록 → App ID/Client ID/Secret/Webhook secret
+- [x] (ops) B-1. Firebase 프로젝트 + **Blaze** + Auth(GitHub)/Firestore/Storage + webConfig
+- [x] (ops) B-2. firebase-config.js 채움 · secrets 등록 · rules/functions 배포
+- [~] (ops) C. Webhook URL 역기입 + PR 라운드트립 확인 — **웹훅 URL 역기입·HMAC ping 204 확인 완료**, 전체 PR 라운드트립(pr_open→merged)은 M3(PR 생성 배선) 후 검증
 - [ ] (ops) GitHub Pages ↔ Functions CORS (Functions에 CORS_ORIGIN 설정 완료, 도메인 확인만)
 
 > 범례 추가: `[m]` = mock(localStorage) 구현 완료, **실연결(Firebase/Functions) 남음**.
@@ -86,7 +86,7 @@
 - [x] 무효화 연쇄 — approved 후 spec 수정 시: `spec_draft` 복귀 + `planStale=true` (로직)
 - [m] 무효화 시 열린 PR 자동 close + 새 버전 링크 코멘트 — 플래그만, **실제 GitHub close 남음**
 - [ ] specVersion 증가(새 브랜치/PR) 처리
-- [ ] (ops) `Team-MINO-Android` CODEOWNERS `specs/** @owner` ([mino_android.md] 소관)
+- [ ] (ops) `Team-MINO-Android` CODEOWNERS `docs/specs/** @owner` ([mino_android.md] 소관)
 
 → **M0–M4 완료 = MVP.** 8개 상태 전부 도달·전이 완결.
 > 현재: 8상태 전부 mock으로 도달·전이 가능(파이프라인 1바퀴 검증됨). 남은 건 **실 백엔드 연결**.

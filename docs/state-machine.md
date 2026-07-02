@@ -2,7 +2,7 @@
 
 > 출처: [mino_spec.md](../../mino_prd/mino_spec.md) 4.5 · 4.8 · 6장 · 8장
 > 상태: 설계(미구현) · v2 전면 재설계 기준
-> 단위: `specs/{feature}/` 한 묶음(spec.md + plan.md)이 **단일 `status`** 를 가진다.
+> 단위: `docs/specs/{feature}/` 한 묶음(spec.md + plan.md)이 **단일 `status`** 를 가진다.
 
 문서 "진실"은 Firestore(`features/{id}`)다. 레포 파일은 스냅샷이며 역수정하지 않는다.
 
