@@ -81,7 +81,10 @@
 - [x] PR 템플릿 (얼라인 체크리스트) → prNumber/prUrl 기록 (PR #55로 확인)
 - [x] ~~개발자 App authorize 온보딩 강제~~ — **불필요**(로그인 토큰이 PR 권한 보유). 로그인=신원+PR권한 겸함
 - [x] **e2e 검증** — PR #55: `docs/specs/e2e-smoke/spec.md·plan.md` 생성, 컨벤션 일치, 디자이너(minnhokim) 반려→재검토→승인 경유
-- [ ] assets 이미지 base64 커밋 ([functions/index.js:94](../functions/index.js#L94) TODO) — **M3 유일 잔여**
+- [x] assets 이미지 커밋 — 프론트가 이미지를 실제 Storage 업로드(store-firebase.uploadAssets) + 함수가 내려받아 `docs/specs/{slug}/assets/`에 base64 커밋(putBinary). **검증 완료(PR #57: `docs/specs/e2e-assets/assets/hero.png`)**
+- [x] PR assignee = 작업자(개발자 githubLogin) 지정 — **검증 완료(PR #56/#57)**
+
+→ **M3 완료.** 실 PR·컨벤션·assets·assignee 전부 검증됨.
 
 ## M4 · 상태머신 완결
 - [x] (BE) `githubWebhook` — `pull_request` 수신 + HMAC 검증 — **e2e 검증 완료(PR #55 close → delivery 200)**
