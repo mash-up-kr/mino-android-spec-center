@@ -35,6 +35,23 @@
   const authCbs = [], dataCbs = [];
   let unsubFeatures = null, unsubUsers = null;
 
+  // 리다이렉트 로그인 결과 준비 신호 — onAuthStateChanged 가 pendingLogin 을
+  // 소비하기 전에 getRedirectResult 가 끝나도록 보장한다.
+  let redirectDone;
+  const redirectReady = new Promise((res) => { redirectDone = res; });
+  fbAuth.getRedirectResult()
+    .then((res) => {
+      if (res && res.user) {
+        const cred = res.credential; // compat: accessToken 포함
+        pendingLogin = {
+          username: res.additionalUserInfo && res.additionalUserInfo.username,
+          token: cred && cred.accessToken,
+        };
+      }
+    })
+    .catch((e) => console.error('getRedirectResult', e))
+    .finally(() => redirectDone());
+
   const notifyAuth = () => authCbs.forEach((cb) => cb(current));
   const notifyData = () => dataCbs.forEach((cb) => cb());
 
@@ -51,6 +68,7 @@
 
   // ---------- auth state ----------
   fbAuth.onAuthStateChanged(async (u) => {
+    await redirectReady; // 리다이렉트 로그인 시 pendingLogin 준비 대기
     if (!u) {
       current = null; cache = [];
       if (unsubFeatures) { unsubFeatures(); unsubFeatures = null; }
@@ -120,6 +138,18 @@
         };
         return { ok: true };
       } catch (e) {
+        // 팝업이 브라우저에 막히거나 중복 호출되면 리다이렉트로 폴백.
+        // 리다이렉트는 페이지를 떠났다가 돌아오며, 결과는 getRedirectResult 가 받는다.
+        if (e.code === 'auth/popup-blocked'
+          || e.code === 'auth/cancelled-popup-request'
+          || e.code === 'auth/operation-not-supported-in-this-environment') {
+          try {
+            await fbAuth.signInWithRedirect(provider);
+            return { ok: true }; // 리다이렉트 진행 — 이 반환값은 사실상 도달 안 함
+          } catch (e2) {
+            return { ok: false, error: e2.message };
+          }
+        }
         return { ok: false, error: e.message };
       }
     },
