@@ -227,11 +227,22 @@
       if (input.figmaSources) patch.figmaSources = input.figmaSources;
       if (input.assets) patch.assets = assets;
       let invalidated = false;
+      let closePr = null;
       if (wasApprovedOrLater) {
         patch.status = 'spec_draft'; patch.planStale = true; invalidated = true;
-        // TODO: 열린 PR 자동 close 는 createSpecPR/Function 연계 후 (M4)
+        if (existing.status === 'pr_open' && existing.prNumber) {
+          closePr = existing.prNumber;
+          patch.prNumber = null; patch.prUrl = null; // 웹훅 매칭 방지 위해 먼저 비운다
+        }
       }
       await ref.update(patch);
+      // Firestore 를 먼저 갱신(prNumber=null)한 뒤 실제 GitHub PR close → 웹훅이 매칭 못 해 상태 유지
+      if (closePr) {
+        try {
+          await firebase.functions().httpsCallable('closeSpecPR')(
+            { featureId: id, prNumber: closePr, reason: 'spec 수정으로 무효화' });
+        } catch (e) { console.error('closeSpecPR 실패(무효화는 진행됨):', e.message); }
+      }
       return { ok: true, feature: { featureId: id }, invalidated };
     },
 

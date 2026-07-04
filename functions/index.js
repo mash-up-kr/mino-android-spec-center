@@ -127,6 +127,46 @@ exports.createSpecPR = onCall(async (request) => {
   }
 });
 
+// ============ 2b) PR close (무효화 연쇄) ============
+// data: { featureId, prNumber, reason }. 개발자 토큰으로 열린 spec PR 을 닫는다.
+// 호출 전 클라이언트가 Firestore prNumber 를 null 로 비워둔다 → close 웹훅이 매칭 실패해
+// pr_closed 로 덮어쓰지 않고 무효화 결과(spec_draft)가 유지된다.
+exports.closeSpecPR = onCall(async (request) => {
+  const uid = request.auth && request.auth.uid;
+  if (!uid) throw new HttpsError('unauthenticated', '로그인이 필요합니다.');
+  const { featureId, prNumber, reason } = request.data || {};
+  if (!featureId || !prNumber) throw new HttpsError('invalid-argument', 'featureId/prNumber 누락');
+
+  const [userSnap, featSnap] = await Promise.all([
+    db.doc(`users/${uid}`).get(),
+    db.doc(`features/${featureId}`).get(),
+  ]);
+  const user = userSnap.data() || {};
+  if (user.role !== 'developer') throw new HttpsError('permission-denied', '개발자만 PR close');
+  if (!user.githubToken) throw new HttpsError('failed-precondition', 'GitHub App 연결 필요(토큰 없음)');
+  const slug = (featSnap.exists && featSnap.data().slug) || '';
+
+  const octokit = new Octokit({ auth: user.githubToken });
+  try {
+    const pr = await octokit.pulls.get({ owner: OWNER, repo: REPO, pull_number: prNumber });
+    // 안전장치: 이 PR 이 정말 해당 spec 브랜치인지 확인
+    if (slug && !pr.data.head.ref.startsWith(`docs/spec-${slug}-`)) {
+      throw new HttpsError('failed-precondition', 'PR 브랜치가 이 spec 과 일치하지 않습니다.');
+    }
+    if (pr.data.state === 'closed') return { closed: true, already: true };
+    const msg = reason || 'spec 이 수정되어 무효화되었습니다.';
+    await octokit.issues.createComment({
+      owner: OWNER, repo: REPO, issue_number: prNumber,
+      body: `⚠️ ${msg} 새 버전으로 다시 PR 이 생성됩니다.`,
+    }).catch(() => {});
+    await octokit.pulls.update({ owner: OWNER, repo: REPO, pull_number: prNumber, state: 'closed' });
+    return { closed: true, prNumber };
+  } catch (e) {
+    if (e instanceof HttpsError) throw e;
+    throw new HttpsError('internal', `PR close 실패: ${e.message}`);
+  }
+});
+
 async function putFile(octokit, branch, path, content, message) {
   let sha;
   try {
