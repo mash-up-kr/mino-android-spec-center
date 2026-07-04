@@ -19,6 +19,24 @@
   const today = () => new Date().toISOString().slice(0, 10);
   const serverTs = () => firebase.firestore.FieldValue.serverTimestamp();
   const arrayUnion = (v) => firebase.firestore.FieldValue.arrayUnion(v);
+  const storage = firebase.storage();
+
+  // 새로 드롭된 File 은 Storage(features/{id}/assets/{name})에 올리고 storagePath 를 채운다.
+  // 이미 storagePath 가 있는 기존 asset 은 재업로드하지 않는다.
+  async function uploadAssets(id, list) {
+    const out = [];
+    for (const a of (list || [])) {
+      if (a.storagePath) { out.push({ name: a.name, storagePath: a.storagePath }); continue; }
+      if (a.file) {
+        const path = `features/${id}/assets/${a.name}`;
+        await storage.ref(path).put(a.file);
+        out.push({ name: a.name, storagePath: path });
+      } else {
+        out.push({ name: a.name, storagePath: '' }); // File 없이 이름만 — 폴백
+      }
+    }
+    return out;
+  }
 
   const ENUMS = {
     status: ['spec_draft', 'spec_in_review', 'spec_changes_requested', 'spec_approved',
@@ -187,7 +205,7 @@
       if (!id) return { ok: false, error: 'slug를 찾지 못했습니다.' };
       const ref = db.doc('features/' + id);
       const existing = findCache(id);
-      const assets = (input.assets || []).map((a) => ({ name: a.name, storagePath: a.storagePath || '' }));
+      const assets = await uploadAssets(id, input.assets);
 
       if (!existing) {
         await ref.set({

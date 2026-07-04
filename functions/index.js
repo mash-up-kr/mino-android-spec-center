@@ -25,6 +25,7 @@ const GITHUB_WEBHOOK_SECRET = defineSecret('GITHUB_WEBHOOK_SECRET');
 const OWNER = 'mash-up-kr';
 const REPO = 'Team-MINO-Android';
 const BASE = 'develop';
+const BUCKET = 'mino-spec-center.firebasestorage.app'; // spec 이미지 Storage 버킷
 // GitHub Pages 도메인 ↔ Functions 도메인 분리 → CORS 허용 (PRD 5장)
 const CORS_ORIGIN = 'https://mash-up-kr.github.io';
 
@@ -91,7 +92,18 @@ exports.createSpecPR = onCall(async (request) => {
     // ② 파일 커밋 (Contents API). spec.md / plan.md
     await putFile(octokit, branch, `${dir}/spec.md`, f.specBody, `docs(spec): ${slug} ${version}`);
     if (f.planBody) await putFile(octokit, branch, `${dir}/plan.md`, f.planBody, `docs(plan): ${slug} ${version}`);
-    // TODO(assets): Storage features/{id}/assets/* 를 base64로 받아 ${dir}/assets/ 에 커밋
+
+    // ②-b assets 이미지: Storage features/{id}/assets/* → ${dir}/assets/ 커밋
+    const assets = Array.isArray(f.assets) ? f.assets : [];
+    for (const a of assets) {
+      if (!a || !a.name || !a.storagePath) continue; // 업로드 안 된(경로없는) asset은 건너뜀
+      try {
+        const [buf] = await admin.storage().bucket(BUCKET).file(a.storagePath).download();
+        await putBinary(octokit, branch, `${dir}/assets/${a.name}`, buf, `docs(spec): ${slug} asset ${a.name}`);
+      } catch (e) {
+        console.error('asset commit 실패:', a.name, e.message); // 개별 실패는 PR 생성을 막지 않음
+      }
+    }
 
     // ③ PR 생성
     const pr = await octokit.pulls.create({
@@ -100,6 +112,10 @@ exports.createSpecPR = onCall(async (request) => {
       body: prTemplate(f),
     });
     await octokit.issues.addLabels({ owner: OWNER, repo: REPO, issue_number: pr.data.number, labels: ['spec'] }).catch(() => {});
+    // 작업자(개발자)를 PR 담당자(assignee)로 지정 — 실패해도 PR은 유지
+    if (user.githubLogin) {
+      await octokit.issues.addAssignees({ owner: OWNER, repo: REPO, issue_number: pr.data.number, assignees: [user.githubLogin] }).catch(() => {});
+    }
 
     await featSnap.ref.update({
       status: 'pr_open', prNumber: pr.data.number, prUrl: pr.data.html_url,
@@ -120,6 +136,19 @@ async function putFile(octokit, branch, path, content, message) {
   await octokit.repos.createOrUpdateFileContents({
     owner: OWNER, repo: REPO, path, message, branch, sha,
     content: Buffer.from(content, 'utf8').toString('base64'),
+  });
+}
+
+// 바이너리(이미지) 커밋 — Buffer 를 그대로 base64 로 올린다.
+async function putBinary(octokit, branch, path, buffer, message) {
+  let sha;
+  try {
+    const cur = await octokit.repos.getContent({ owner: OWNER, repo: REPO, path, ref: branch });
+    sha = cur.data.sha;
+  } catch (e) { if (e.status !== 404) throw e; }
+  await octokit.repos.createOrUpdateFileContents({
+    owner: OWNER, repo: REPO, path, message, branch, sha,
+    content: Buffer.from(buffer).toString('base64'),
   });
 }
 

@@ -86,7 +86,7 @@
         const f = Object.assign(this.blank(), {
           featureId: id, slug: m.slug, title: m.title || id,
           specVersion: m.specVersion || '', specBody: input.specBody,
-          figmaSources: input.figmaSources || [], assets: input.assets || [],
+          figmaSources: input.figmaSources || [], assets: (input.assets || []).map((a) => ({ name: a.name, storagePath: a.storagePath || '' })),
           createdBy: me ? me.uid : '', status: 'spec_draft',
         });
         store.push(f); persist();
@@ -101,7 +101,7 @@
       f.specVersion = m.specVersion || f.specVersion;
       f.specBody = input.specBody;
       if (input.figmaSources) f.figmaSources = input.figmaSources;
-      if (input.assets) f.assets = input.assets;
+      if (input.assets) f.assets = input.assets.map((a) => ({ name: a.name, storagePath: a.storagePath || '' }));
       f.updatedAt = today();
 
       let invalidated = false;

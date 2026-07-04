@@ -531,7 +531,7 @@
   let uploadCtx = null; // { featureId|null, assets:[{name}] }
   function openUpload(f) {
     if (!auth.isDeveloper()) { alert('spec 업로드/수정은 개발자만 가능합니다.'); return; }
-    uploadCtx = { featureId: f ? f.featureId : null, assets: f ? (f.assets || []).map((a) => ({ name: a.name })) : [] };
+    uploadCtx = { featureId: f ? f.featureId : null, assets: f ? (f.assets || []).map((a) => ({ name: a.name, storagePath: a.storagePath || '' })) : [] };
     $('#upload-title').textContent = f ? `spec 수정 · ${f.title}` : '새 스펙 업로드';
     uploadMsg('', false);
     const body = f ? f.specBody : '';
@@ -561,8 +561,8 @@
     el.querySelectorAll('button[data-rm]').forEach((b) =>
       b.addEventListener('click', () => { uploadCtx.assets.splice(+b.dataset.rm, 1); renderUpAssets(); }));
   }
-  function addAssetNames(names) {
-    names.forEach((n) => { if (!uploadCtx.assets.some((a) => a.name === n)) uploadCtx.assets.push({ name: n }); });
+  function addAssets(files) {
+    files.forEach((f) => { if (!uploadCtx.assets.some((a) => a.name === f.name)) uploadCtx.assets.push({ name: f.name, file: f }); });
     renderUpAssets();
   }
   function wireDropzone() {
@@ -582,10 +582,10 @@
         reader.onload = () => { $('#up-spec').value = reader.result; };
         reader.readAsText(file);
       } else if (/\.(png|jpe?g)$/i.test(file.name)) {
-        imgs.push(file.name);
+        imgs.push(file);
       }
     });
-    if (imgs.length) addAssetNames(imgs);
+    if (imgs.length) addAssets(imgs);
   }
   function uploadMsg(t, err = true) { const el = $('#upload-msg'); el.textContent = t; el.classList.toggle('error', err); }
 
@@ -606,7 +606,7 @@
     const figmaSources = ($('#up-figma').value || '').split('\n').map((s) => s.trim()).filter(Boolean);
     const r = await features.saveSpec({
       featureId: uploadCtx.featureId, specBody,
-      figmaSources, assets: uploadCtx.assets.map((a) => ({ name: a.name, storagePath: '' })),
+      figmaSources, assets: uploadCtx.assets.map((a) => ({ name: a.name, file: a.file || null, storagePath: a.storagePath || '' })),
     });
     if (!r.ok) return uploadMsg(r.error || '저장 실패');
     closeModal('upload-modal');
