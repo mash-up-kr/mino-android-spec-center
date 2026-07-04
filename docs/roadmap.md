@@ -75,24 +75,24 @@
 > **2026-07-04 발견**: Firebase Auth GitHub provider가 A(GitHub App) client로 설정돼 있어, **로그인 토큰이 이미 PR-capable**(스모크 테스트: `permissions.push=true`, `x-oauth-scopes` 비어있음 = App user-to-server 토큰). → **별도 `githubOAuthExchange`/authorize 온보딩 불필요**. createPr는 로그인 토큰으로 바로 동작. 남은 건 **e2e 검증 + assets 커밋**.
 - [x] `plan-gen` 안내 + plan 붙여넣기 (`spec_approved` 후) → `plan_drafted`
 - [~] (BE) `githubOAuthExchange` — **배포됨·미사용**(로그인 토큰이 대체). 다른 개발자 push권한 없을 때만 대안으로 보류
-- [x] (BE) `createSpecPR` — 브랜치 생성 → 파일 커밋(spec/plan) → PR 생성 (배포됨, 로그인 토큰으로 동작). e2e 검증 남음
-- [~] PR 생성 → `pr_open` — store-firebase는 `createSpecPR` 실호출(실 prNumber/prUrl). store.js(mock)만 stub. **e2e 미검증**
-- [x] PR 컨벤션: 브랜치 `docs/spec-{slug}-{version}` · base develop · 라벨 spec · 제목 `docs(spec): {slug} {version}` (함수 구현됨)
-- [x] PR 템플릿 (얼라인 체크리스트) → prNumber/prUrl 기록 (함수 구현됨)
-- [~] ~~개발자 App authorize 온보딩 강제~~ — **불필요**(로그인 토큰이 PR 권한 보유). 로그인=신원+PR권한 겸함
-- [ ] **e2e 검증** — 실 feature로 `docs/specs/{slug}/spec.md·plan.md` PR 1건 생성 (디자이너 승인 경유)
-- [ ] assets 이미지 base64 커밋 ([functions/index.js:94](../functions/index.js#L94) TODO)
+- [x] (BE) `createSpecPR` — 브랜치 생성 → 파일 커밋(spec/plan) → PR 생성. **e2e 검증 완료(2026-07-04, PR #55)**
+- [x] PR 생성 → `pr_open` — store-firebase가 `createSpecPR` 실호출(실 prNumber/prUrl). **e2e 검증 완료(PR #55)**
+- [x] PR 컨벤션: 브랜치 `docs/spec-{slug}-{version}` · base develop · 라벨 spec · 제목 `docs(spec): {slug} {version}` (PR #55로 확인)
+- [x] PR 템플릿 (얼라인 체크리스트) → prNumber/prUrl 기록 (PR #55로 확인)
+- [x] ~~개발자 App authorize 온보딩 강제~~ — **불필요**(로그인 토큰이 PR 권한 보유). 로그인=신원+PR권한 겸함
+- [x] **e2e 검증** — PR #55: `docs/specs/e2e-smoke/spec.md·plan.md` 생성, 컨벤션 일치, 디자이너(minnhokim) 반려→재검토→승인 경유
+- [ ] assets 이미지 base64 커밋 ([functions/index.js:94](../functions/index.js#L94) TODO) — **M3 유일 잔여**
 
 ## M4 · 상태머신 완결
-- [ ] (BE) `githubWebhook` — `pull_request` 수신 + HMAC 검증
-- [m] merged → `merged` / 미머지 close → `pr_closed` — **현재 mock 버튼**, 실 Webhook 남음
+- [x] (BE) `githubWebhook` — `pull_request` 수신 + HMAC 검증 — **e2e 검증 완료(PR #55 close → delivery 200)**
+- [~] merged → `merged` / 미머지 close → `pr_closed` — **close 경로 검증 완료**(PR #55 → `pr_closed`). merged 경로는 동일 코드분기지만 미검증(더미 PR을 develop에 머지 안 함)
 - [x] 무효화 연쇄 — approved 후 spec 수정 시: `spec_draft` 복귀 + `planStale=true` (로직)
 - [m] 무효화 시 열린 PR 자동 close + 새 버전 링크 코멘트 — 플래그만, **실제 GitHub close 남음**
 - [ ] specVersion 증가(새 브랜치/PR) 처리
 - [x] (ops) `Team-MINO-Android` CODEOWNERS `docs/specs/** @안드3인` — **PR #54 머지 완료**. (강제하려면 develop 브랜치 보호에 "Require review from Code Owners" 활성화 필요) ([mino_android.md] 소관)
 
 → **M0–M4 완료 = MVP.** 8개 상태 전부 도달·전이 완결.
-> 현재: 8상태 전부 mock으로 도달·전이 가능(파이프라인 1바퀴 검증됨). 남은 건 **실 백엔드 연결**.
+> **2026-07-04**: 실 백엔드로 파이프라인 1바퀴 완주 검증(PR #55). spec 업로드→반려→재검토→승인→plan→실 PR 생성(pr_open)→PR close→웹훅→pr_closed. M3 잔여=assets 커밋, M4 잔여=merged 경로 검증·무효화 실 close·specVersion 증가. 이후는 P3(보안 규칙 강제) 중심.
 
 ---
 
