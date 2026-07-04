@@ -72,13 +72,16 @@
 - [m] role 기반 액션 가드 — UI만, **Firestore 보안규칙 남음**
 
 ## M3 · plan + PR 생성
+> **2026-07-04 발견**: Firebase Auth GitHub provider가 A(GitHub App) client로 설정돼 있어, **로그인 토큰이 이미 PR-capable**(스모크 테스트: `permissions.push=true`, `x-oauth-scopes` 비어있음 = App user-to-server 토큰). → **별도 `githubOAuthExchange`/authorize 온보딩 불필요**. createPr는 로그인 토큰으로 바로 동작. 남은 건 **e2e 검증 + assets 커밋**.
 - [x] `plan-gen` 안내 + plan 붙여넣기 (`spec_approved` 후) → `plan_drafted`
-- [ ] (BE) `githubOAuthExchange` — OAuth code → user token 교환
-- [ ] (BE) `createSpecPR` — 브랜치 생성 → 파일 커밋(spec/plan/assets) → PR 생성
-- [m] PR 생성 → `pr_open` — **현재 stub(랜덤 PR번호)**, 실 PR 생성 남음
-- [ ] PR 컨벤션: 브랜치 `docs/spec-{slug}-v{n}` · base develop · 라벨 spec · 제목 `docs(spec): {feature} v{n}`
-- [ ] PR 템플릿 (얼라인 체크리스트) → prNumber/prUrl 기록(실값)
-- [ ] 개발자 GitHub App authorize 온보딩 강제 (디자이너 제외)
+- [~] (BE) `githubOAuthExchange` — **배포됨·미사용**(로그인 토큰이 대체). 다른 개발자 push권한 없을 때만 대안으로 보류
+- [x] (BE) `createSpecPR` — 브랜치 생성 → 파일 커밋(spec/plan) → PR 생성 (배포됨, 로그인 토큰으로 동작). e2e 검증 남음
+- [~] PR 생성 → `pr_open` — store-firebase는 `createSpecPR` 실호출(실 prNumber/prUrl). store.js(mock)만 stub. **e2e 미검증**
+- [x] PR 컨벤션: 브랜치 `docs/spec-{slug}-{version}` · base develop · 라벨 spec · 제목 `docs(spec): {slug} {version}` (함수 구현됨)
+- [x] PR 템플릿 (얼라인 체크리스트) → prNumber/prUrl 기록 (함수 구현됨)
+- [~] ~~개발자 App authorize 온보딩 강제~~ — **불필요**(로그인 토큰이 PR 권한 보유). 로그인=신원+PR권한 겸함
+- [ ] **e2e 검증** — 실 feature로 `docs/specs/{slug}/spec.md·plan.md` PR 1건 생성 (디자이너 승인 경유)
+- [ ] assets 이미지 base64 커밋 ([functions/index.js:94](../functions/index.js#L94) TODO)
 
 ## M4 · 상태머신 완결
 - [ ] (BE) `githubWebhook` — `pull_request` 수신 + HMAC 검증
