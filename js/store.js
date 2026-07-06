@@ -91,11 +91,12 @@
       if (i < 0) {
         // 신규 생성 → spec_draft. 버전은 대시보드 소유 — 항상 v0.1.0 시작(0.x→머지 시 1.0.0 승격).
         const initVer = VER.INIT;
+        const initLog = [VER.logEntry(initVer, 'init', today())];
         const f = Object.assign(this.blank(), {
           featureId: id, slug: m.slug, title: m.title || id,
-          specVersion: initVer, specBody: input.specBody,
+          specVersion: initVer, specBody: VER.injectVersionHistory(input.specBody, initLog),
           figmaSources: input.figmaSources || [], assets: (input.assets || []).map((a) => ({ name: a.name, storagePath: a.storagePath || '' })),
-          versionLog: [VER.logEntry(initVer, 'init', today())],
+          versionLog: initLog,
           createdBy: me ? me.uid : '', status: 'spec_draft',
         });
         store.push(f); persist();
@@ -108,7 +109,6 @@
       f.slug = m.slug || f.slug;
       f.title = m.title || f.title;
       // 버전은 대시보드 소유 — 마크다운 파싱값으로 덮지 않음(bump만 반영)
-      f.specBody = input.specBody;
       if (input.figmaSources) f.figmaSources = input.figmaSources;
       if (input.assets) f.assets = input.assets.map((a) => ({ name: a.name, storagePath: a.storagePath || '' }));
       f.updatedAt = today();
@@ -130,6 +130,8 @@
       } else if (f.status === 'spec_changes_requested') {
         // 반려 후 수정은 draft로 되돌릴 필요 없음(재요청 가능) — 상태 유지. bump은 재제출 시(requestReview).
       }
+      // 저장본에 변경 이력 표 주입(업로드 원본의 수기 표 대체 → 대시보드·커밋 파일 일치)
+      f.specBody = VER.injectVersionHistory(input.specBody, f.versionLog);
       persist();
       return { ok: true, feature: this.get(id), invalidated };
     },
@@ -163,6 +165,7 @@
       if (f.status === 'spec_changes_requested') {
         f.specVersion = VER.bump(f.specVersion, 'patch');
         f.versionLog = (f.versionLog || []).concat(VER.logEntry(f.specVersion, 'patch', today()));
+        f.specBody = VER.injectVersionHistory(f.specBody, f.versionLog);
       }
       f.status = 'spec_in_review'; f.updatedAt = today(); persist();
       return { ok: true, feature: this.get(id) };
@@ -235,6 +238,7 @@
         if (nv !== f.specVersion) {
           f.specVersion = nv;
           f.versionLog = (f.versionLog || []).concat(VER.logEntry(nv, 'graduate', today()));
+          f.specBody = VER.injectVersionHistory(f.specBody, f.versionLog);
         }
       }
       f.updatedAt = today(); persist();

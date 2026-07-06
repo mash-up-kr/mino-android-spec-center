@@ -287,7 +287,9 @@ exports.githubWebhook = onRequest(
       const nv = bumpVersion(fdata.specVersion, 'graduate');
       if (nv !== fdata.specVersion) {
         patch.specVersion = nv;
-        patch.versionLog = admin.firestore.FieldValue.arrayUnion(versionLogEntry(nv, 'graduate'));
+        const resultLog = (Array.isArray(fdata.versionLog) ? fdata.versionLog : []).concat(versionLogEntry(nv, 'graduate'));
+        patch.versionLog = resultLog;
+        patch.specBody = injectVersionHistory(fdata.specBody, resultLog);
       }
     }
     await doc.ref.update(patch);

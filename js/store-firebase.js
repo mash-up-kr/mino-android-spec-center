@@ -229,11 +229,12 @@
       if (!existing) {
         // 버전은 대시보드 소유 — 항상 v0.1.0 시작(0.x→머지 시 1.0.0 승격).
         const initVer = VER.INIT;
+        const initLog = [VER.logEntry(initVer, 'init', today())];
         await ref.set({
           slug: m.slug, title: m.title || id, status: 'spec_draft', planStale: false,
           specVersion: initVer, figmaSources: input.figmaSources || [],
-          prNumber: null, prUrl: null, specBody: input.specBody, planBody: null,
-          assets, reviews: [], versionLog: [VER.logEntry(initVer, 'init', today())],
+          prNumber: null, prUrl: null, specBody: VER.injectVersionHistory(input.specBody, initLog), planBody: null,
+          assets, reviews: [], versionLog: initLog,
           createdBy: current.uid, createdAt: serverTs(), updatedAt: serverTs(),
         });
         return { ok: true, feature: { featureId: id }, created: true };
@@ -243,22 +244,26 @@
       const wasCommitted = ['spec_approved', 'plan_drafted', 'pr_open', 'merged'].includes(existing.status);
       const patch = {
         slug: m.slug || existing.slug, title: m.title || existing.title,
-        specBody: input.specBody, updatedAt: serverTs(),
+        updatedAt: serverTs(),
       };
       if (input.figmaSources) patch.figmaSources = input.figmaSources;
       if (input.assets) patch.assets = assets;
       let invalidated = false;
       let closePr = null;
+      let resultLog = existing.versionLog || [];
       if (wasCommitted) {
         const level = VER.invalidationLevel(existing.status); // minor|major
         patch.specVersion = VER.bump(existing.specVersion, level);
-        patch.versionLog = arrayUnion(VER.logEntry(patch.specVersion, level, today()));
+        resultLog = resultLog.concat(VER.logEntry(patch.specVersion, level, today()));
+        patch.versionLog = resultLog;
         patch.status = 'spec_draft'; patch.planStale = true; invalidated = true;
         if (existing.status === 'pr_open' && existing.prNumber) {
           closePr = existing.prNumber;
           patch.prNumber = null; patch.prUrl = null; // 웹훅 매칭 방지 위해 먼저 비운다
         }
       }
+      // 저장본에 변경 이력 표 주입(대시보드·커밋 파일 일치)
+      patch.specBody = VER.injectVersionHistory(input.specBody, resultLog);
       await ref.update(patch);
       // Firestore 를 먼저 갱신(prNumber=null)한 뒤 실제 GitHub PR close → 웹훅이 매칭 못 해 상태 유지
       if (closePr) {
@@ -292,7 +297,9 @@
       // 반려 후 재제출 = PATCH bump. 최초 검토요청은 bump 없음.
       if (f.status === 'spec_changes_requested') {
         patch.specVersion = VER.bump(f.specVersion, 'patch');
-        patch.versionLog = arrayUnion(VER.logEntry(patch.specVersion, 'patch', today()));
+        const resultLog = (f.versionLog || []).concat(VER.logEntry(patch.specVersion, 'patch', today()));
+        patch.versionLog = resultLog;
+        patch.specBody = VER.injectVersionHistory(f.specBody, resultLog);
       }
       await db.doc('features/' + id).update(patch);
       return { ok: true, feature: { featureId: id } };
@@ -358,7 +365,9 @@
         const nv = VER.bump(f.specVersion, 'graduate');
         if (nv !== f.specVersion) {
           patch.specVersion = nv;
-          patch.versionLog = arrayUnion(VER.logEntry(nv, 'graduate', today()));
+          const resultLog = (f.versionLog || []).concat(VER.logEntry(nv, 'graduate', today()));
+          patch.versionLog = resultLog;
+          patch.specBody = VER.injectVersionHistory(f.specBody, resultLog);
         }
       }
       await db.doc('features/' + id).update(patch);
