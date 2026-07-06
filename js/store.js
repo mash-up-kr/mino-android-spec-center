@@ -55,6 +55,7 @@
 
   // ===================== Features =====================
   const META = window.MASCSpec;
+  const VER = window.MASCVersion;
 
   const features = {
     enums() { return seed.enums || {}; },
@@ -74,7 +75,7 @@
         featureId: '', slug: '', title: '', status: 'spec_draft',
         planStale: false, specVersion: '', figmaSources: [],
         prNumber: null, prUrl: null, specBody: '', planBody: null,
-        assets: [], reviews: [], createdBy: '', createdAt: today(), updatedAt: today(),
+        assets: [], reviews: [], versionLog: [], createdBy: '', createdAt: today(), updatedAt: today(),
       };
     },
 
@@ -88,31 +89,36 @@
       const i = idxOf(id);
 
       if (i < 0) {
-        // 신규 생성 → spec_draft
+        // 신규 생성 → spec_draft. 버전은 대시보드 소유 — 항상 v0.1.0 시작(0.x→머지 시 1.0.0 승격).
+        const initVer = VER.INIT;
         const f = Object.assign(this.blank(), {
           featureId: id, slug: m.slug, title: m.title || id,
-          specVersion: m.specVersion || '', specBody: input.specBody,
+          specVersion: initVer, specBody: input.specBody,
           figmaSources: input.figmaSources || [], assets: (input.assets || []).map((a) => ({ name: a.name, storagePath: a.storagePath || '' })),
+          versionLog: [VER.logEntry(initVer, 'init', today())],
           createdBy: me ? me.uid : '', status: 'spec_draft',
         });
         store.push(f); persist();
         return { ok: true, feature: this.get(id), created: true };
       }
 
-      // 기존 수정 — 무효화 연쇄 판단
+      // 기존 수정 — 무효화 연쇄 판단. 머지된 스펙 수정도 무효화(major).
       const f = store[i];
-      const wasApprovedOrLater = ['spec_approved', 'plan_drafted', 'pr_open'].includes(f.status);
+      const wasCommitted = ['spec_approved', 'plan_drafted', 'pr_open', 'merged'].includes(f.status);
       f.slug = m.slug || f.slug;
       f.title = m.title || f.title;
-      f.specVersion = m.specVersion || f.specVersion;
+      // 버전은 대시보드 소유 — 마크다운 파싱값으로 덮지 않음(bump만 반영)
       f.specBody = input.specBody;
       if (input.figmaSources) f.figmaSources = input.figmaSources;
       if (input.assets) f.assets = input.assets.map((a) => ({ name: a.name, storagePath: a.storagePath || '' }));
       f.updatedAt = today();
 
       let invalidated = false;
-      if (wasApprovedOrLater) {
-        // 무효화: spec_draft 복귀 + planStale + 열린 PR 자동 close
+      if (wasCommitted) {
+        // 무효화: 버전 bump(minor/major) + spec_draft 복귀 + planStale + 열린 PR 자동 close
+        const level = VER.invalidationLevel(f.status);
+        f.specVersion = VER.bump(f.specVersion, level);
+        f.versionLog = (f.versionLog || []).concat(VER.logEntry(f.specVersion, level, today()));
         f.status = 'spec_draft';
         f.planStale = true;
         if (f.prNumber) {
@@ -122,7 +128,7 @@
         }
         invalidated = true;
       } else if (f.status === 'spec_changes_requested') {
-        // 반려 후 수정은 draft로 되돌릴 필요 없음(재요청 가능) — 상태 유지
+        // 반려 후 수정은 draft로 되돌릴 필요 없음(재요청 가능) — 상태 유지. bump은 재제출 시(requestReview).
       }
       persist();
       return { ok: true, feature: this.get(id), invalidated };
@@ -152,6 +158,11 @@
       const f = store[i];
       if (!['spec_draft', 'spec_changes_requested'].includes(f.status)) {
         return { ok: false, error: `현재 상태(${f.status})에서는 컨펌 요청 불가` };
+      }
+      // 반려 후 재제출 = PATCH bump (승인 전 반복 라운드). 최초 검토요청은 bump 없음.
+      if (f.status === 'spec_changes_requested') {
+        f.specVersion = VER.bump(f.specVersion, 'patch');
+        f.versionLog = (f.versionLog || []).concat(VER.logEntry(f.specVersion, 'patch', today()));
       }
       f.status = 'spec_in_review'; f.updatedAt = today(); persist();
       return { ok: true, feature: this.get(id) };
@@ -218,6 +229,27 @@
       const f = store[i];
       if (f.status !== 'pr_open') return { ok: false, error: 'PR 열림 상태가 아닙니다.' };
       f.status = kind === 'merged' ? 'merged' : 'pr_closed';
+      // 최초 머지 → 0.x 를 v1.0.0 으로 승격(코드 착지 = 릴리스)
+      if (kind === 'merged') {
+        const nv = VER.bump(f.specVersion, 'graduate');
+        if (nv !== f.specVersion) {
+          f.specVersion = nv;
+          f.versionLog = (f.versionLog || []).concat(VER.logEntry(nv, 'graduate', today()));
+        }
+      }
+      f.updatedAt = today(); persist();
+      return { ok: true, feature: this.get(id) };
+    },
+
+    /** 변경이력 항목 사유 편집(개발자). 최신 매칭 버전의 reason 갱신. */
+    editVersionReason(id, version, reason) {
+      const i = idxOf(id); if (i < 0) return { ok: false, error: 'feature 없음' };
+      if (!auth.isDeveloper()) return { ok: false, error: '개발자만 편집 가능' };
+      const f = store[i];
+      const log = f.versionLog || [];
+      for (let k = log.length - 1; k >= 0; k--) {
+        if (log[k].version === version) { log[k].reason = reason; break; }
+      }
       f.updatedAt = today(); persist();
       return { ok: true, feature: this.get(id) };
     },

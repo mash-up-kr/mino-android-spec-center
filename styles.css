@@ -434,6 +434,13 @@ table.feature-table { width: 100%; border-collapse: collapse; }
 .review-comments { margin: 6px 0 0; padding-left: 18px; font-size: 13px; }
 .review-comments b { color: var(--text); }
 
+/* 변경 이력(버전 로그) */
+.ver-item { padding: 8px 0; border-top: 1px solid var(--border); display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
+.ver-num { font-weight: 700; font-size: 13px; }
+.ver-reason { flex-basis: 100%; font-size: 13px; color: var(--text); margin-top: 2px; }
+.ver-edit { background: none; border: none; cursor: pointer; padding: 0 2px; font-size: 12px; opacity: .6; }
+.ver-edit:hover { opacity: 1; }
+
 /* Skill guide */
 .skill-steps { margin: 6px 0; padding-left: 20px; line-height: 1.9; }
 .skill-steps code { background: var(--bg); padding: 1px 5px; border-radius: 4px; font-size: 12px; }

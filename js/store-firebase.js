@@ -16,6 +16,7 @@
   const fbAuth = firebase.auth();
   const db = firebase.firestore();
   const META = window.MASCSpec;
+  const VER = window.MASCVersion;
   const today = () => new Date().toISOString().slice(0, 10);
   const serverTs = () => firebase.firestore.FieldValue.serverTimestamp();
   const arrayUnion = (v) => firebase.firestore.FieldValue.arrayUnion(v);
@@ -95,7 +96,8 @@
       planStale: !!d.planStale, specVersion: d.specVersion || '', figmaSources: d.figmaSources || [],
       prNumber: d.prNumber || null, prUrl: d.prUrl || null,
       specBody: d.specBody || '', planBody: d.planBody || null,
-      assets: d.assets || [], reviews: d.reviews || [], createdBy: d.createdBy || '',
+      assets: d.assets || [], reviews: d.reviews || [], versionLog: d.versionLog || [],
+      createdBy: d.createdBy || '',
     };
   }
   const findCache = (id) => cache.find((f) => f.featureId === id) || null;
@@ -225,27 +227,32 @@
       const assets = await uploadAssets(id, input.assets);
 
       if (!existing) {
+        // 버전은 대시보드 소유 — 항상 v0.1.0 시작(0.x→머지 시 1.0.0 승격).
+        const initVer = VER.INIT;
         await ref.set({
           slug: m.slug, title: m.title || id, status: 'spec_draft', planStale: false,
-          specVersion: m.specVersion || '', figmaSources: input.figmaSources || [],
+          specVersion: initVer, figmaSources: input.figmaSources || [],
           prNumber: null, prUrl: null, specBody: input.specBody, planBody: null,
-          assets, reviews: [], createdBy: current.uid,
-          createdAt: serverTs(), updatedAt: serverTs(),
+          assets, reviews: [], versionLog: [VER.logEntry(initVer, 'init', today())],
+          createdBy: current.uid, createdAt: serverTs(), updatedAt: serverTs(),
         });
         return { ok: true, feature: { featureId: id }, created: true };
       }
 
-      const wasApprovedOrLater = ['spec_approved', 'plan_drafted', 'pr_open'].includes(existing.status);
+      // 머지된 스펙 수정도 무효화(major). 버전은 대시보드 소유 — 마크다운값으로 덮지 않음.
+      const wasCommitted = ['spec_approved', 'plan_drafted', 'pr_open', 'merged'].includes(existing.status);
       const patch = {
         slug: m.slug || existing.slug, title: m.title || existing.title,
-        specVersion: m.specVersion || existing.specVersion, specBody: input.specBody,
-        updatedAt: serverTs(),
+        specBody: input.specBody, updatedAt: serverTs(),
       };
       if (input.figmaSources) patch.figmaSources = input.figmaSources;
       if (input.assets) patch.assets = assets;
       let invalidated = false;
       let closePr = null;
-      if (wasApprovedOrLater) {
+      if (wasCommitted) {
+        const level = VER.invalidationLevel(existing.status); // minor|major
+        patch.specVersion = VER.bump(existing.specVersion, level);
+        patch.versionLog = arrayUnion(VER.logEntry(patch.specVersion, level, today()));
         patch.status = 'spec_draft'; patch.planStale = true; invalidated = true;
         if (existing.status === 'pr_open' && existing.prNumber) {
           closePr = existing.prNumber;
@@ -281,7 +288,13 @@
       if (!['spec_draft', 'spec_changes_requested'].includes(f.status)) {
         return { ok: false, error: `현재 상태(${f.status})에서는 컨펌 요청 불가` };
       }
-      await db.doc('features/' + id).update({ status: 'spec_in_review', updatedAt: serverTs() });
+      const patch = { status: 'spec_in_review', updatedAt: serverTs() };
+      // 반려 후 재제출 = PATCH bump. 최초 검토요청은 bump 없음.
+      if (f.status === 'spec_changes_requested') {
+        patch.specVersion = VER.bump(f.specVersion, 'patch');
+        patch.versionLog = arrayUnion(VER.logEntry(patch.specVersion, 'patch', today()));
+      }
+      await db.doc('features/' + id).update(patch);
       return { ok: true, feature: { featureId: id } };
     },
 
@@ -339,9 +352,28 @@
     async syncFromWebhook(id, kind) {
       const f = findCache(id); if (!f) return { ok: false, error: 'feature 없음' };
       if (f.status !== 'pr_open') return { ok: false, error: 'PR 열림 상태가 아닙니다.' };
-      await db.doc('features/' + id).update({
-        status: kind === 'merged' ? 'merged' : 'pr_closed', updatedAt: serverTs(),
-      });
+      const patch = { status: kind === 'merged' ? 'merged' : 'pr_closed', updatedAt: serverTs() };
+      // 최초 머지 → 0.x 를 v1.0.0 으로 승격
+      if (kind === 'merged') {
+        const nv = VER.bump(f.specVersion, 'graduate');
+        if (nv !== f.specVersion) {
+          patch.specVersion = nv;
+          patch.versionLog = arrayUnion(VER.logEntry(nv, 'graduate', today()));
+        }
+      }
+      await db.doc('features/' + id).update(patch);
+      return { ok: true, feature: { featureId: id } };
+    },
+
+    /** 변경이력 항목 사유 편집(개발자). 최신 매칭 버전의 reason 갱신. */
+    async editVersionReason(id, version, reason) {
+      const f = findCache(id); if (!f) return { ok: false, error: 'feature 없음' };
+      if (!auth.isDeveloper()) return { ok: false, error: '개발자만 편집 가능' };
+      const log = (f.versionLog || []).map((e) => ({ ...e }));
+      for (let k = log.length - 1; k >= 0; k--) {
+        if (log[k].version === version) { log[k].reason = reason; break; }
+      }
+      await db.doc('features/' + id).update({ versionLog: log, updatedAt: serverTs() });
       return { ok: true, feature: { featureId: id } };
     },
   };

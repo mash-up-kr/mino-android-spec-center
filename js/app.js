@@ -472,10 +472,14 @@
         </div>
         <div class="feat-sub" style="margin-top:6px">이미지 ${f.assets ? f.assets.length : 0}개 · 작성자 ${esc(userName(f.createdBy))}</div>
       </div>
+      ${versionHistoryHtml(f, isDev)}
       ${reviewsHtml(f)}`;
 
     // 문서 보기
     panel.querySelectorAll('button[data-doc]').forEach((b) => b.addEventListener('click', () => openDoc(f, b.dataset.doc)));
+    // 변경이력 사유 편집(개발자)
+    panel.querySelectorAll('button[data-edit-ver]').forEach((b) =>
+      b.addEventListener('click', () => editVersionReason(f, b.dataset.editVer, b.dataset.reason)));
     // 액션 와이어링
     wireActions(panel, f);
   }
@@ -511,6 +515,10 @@
         // mock: Webhook 시뮬레이션
         btns.push(`<button class="btn-ghost" data-act="sim-merged">[mock] merged</button>`);
         btns.push(`<button class="btn-ghost" data-act="sim-closed">[mock] closed</button>`);
+      } else if (f.status === 'merged') {
+        // 머지된 스펙 수정 → MAJOR 무효화(코드 반영본 변경). 새 PR 라운드로 이어짐.
+        btns.push(`<button class="btn-ghost" data-act="edit-spec">spec 수정</button>`);
+        if (f.prUrl) btns.push(`<a class="btn-primary" href="${f.prUrl}" target="_blank" rel="noopener">PR #${f.prNumber} 보기</a>`);
       }
     }
     // 디자이너 액션 — 스펙 미리보기에서 코멘트 + 승인/반려
@@ -553,6 +561,36 @@
         ${cs ? `<ul class="review-comments">${cs}</ul>` : ''}</div>`;
     }).join('');
     return `<div class="detail-section"><h3>컨펌 이력</h3>${items}</div>`;
+  }
+
+  // 변경 이력(버전 로그) — 대시보드 자동 관리, 개발자는 사유 편집 가능
+  const VER_TAG = {
+    init: badge('최초', 'gray'), patch: badge('PATCH', 'blue'),
+    minor: badge('MINOR', 'amber'), major: badge('MAJOR', 'red'), graduate: badge('릴리스', 'green'),
+  };
+  function versionHistoryHtml(f, isDev) {
+    const log = f.versionLog || [];
+    if (!log.length) return '';
+    const items = log.slice().reverse().map((e) => {
+      const tag = VER_TAG[e.level] || badge(e.level, 'gray');
+      const editBtn = isDev
+        ? `<button class="ver-edit" data-edit-ver="${esc(e.version)}" data-reason="${esc(e.reason || '')}" title="사유 편집">✏️</button>`
+        : '';
+      return `<div class="ver-item">
+        <span class="ver-num mono">${esc(e.version)}</span> ${tag}
+        <span class="feat-sub">${esc(e.at || '')}</span>${editBtn}
+        <div class="ver-reason">${esc(e.reason || '')}</div>
+      </div>`;
+    }).join('');
+    return `<div class="detail-section"><h3>변경 이력 <span class="feat-sub">(자동)</span></h3>${items}</div>`;
+  }
+
+  async function editVersionReason(f, version, current) {
+    const next = prompt(`변경 사유 (${version})`, current || '');
+    if (next == null) return; // 취소
+    const r = await features.editVersionReason(f.featureId, version, next.trim());
+    if (!r.ok) { alert(r.error); return; }
+    if (window.MASC.BACKEND === 'mock') renderAll();
   }
 
   // ===================== Upload (spec drag-drop + 검증) =====================
