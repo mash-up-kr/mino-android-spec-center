@@ -90,7 +90,9 @@ exports.createSpecPR = onCall(async (request) => {
     });
 
     // ② 파일 커밋 (Contents API). spec.md / plan.md
-    await putFile(octokit, branch, `${dir}/spec.md`, f.specBody, `docs(spec): ${slug} ${version}`);
+    // 변경 이력 표는 대시보드 versionLog 로 자동 생성/주입(개발자 수기 표 대체).
+    const specBody = injectVersionHistory(f.specBody, f.versionLog);
+    await putFile(octokit, branch, `${dir}/spec.md`, specBody, `docs(spec): ${slug} ${version}`);
     if (f.planBody) await putFile(octokit, branch, `${dir}/plan.md`, f.planBody, `docs(plan): ${slug} ${version}`);
 
     // ②-b assets 이미지: Storage features/{id}/assets/* → ${dir}/assets/ 커밋
@@ -192,6 +194,56 @@ async function putBinary(octokit, branch, path, buffer, message) {
   });
 }
 
+// ===================== 자동 버저닝 (js/version.js 서버측 미러) =====================
+const VER_INIT = 'v0.1.0';
+const VER_REASONS = {
+  init: '최초 작성', patch: '반려 반영 후 재검토 요청',
+  minor: '승인 후 수정 — 무효화 (재검토 필요)', major: '머지된 스펙 수정 — 무효화',
+  graduate: '최초 머지 (릴리스)',
+};
+function parseVer(v) {
+  const m = /^v(\d+)\.(\d+)\.(\d+)$/.exec(String(v || '').trim());
+  return m ? [+m[1], +m[2], +m[3]] : null;
+}
+function bumpVersion(current, level) {
+  const a = parseVer(current) || parseVer(VER_INIT);
+  if (level === 'patch') return `v${a[0]}.${a[1]}.${a[2] + 1}`;
+  if (level === 'minor') return `v${a[0]}.${a[1] + 1}.0`;
+  if (level === 'major') return `v${a[0] + 1}.0.0`;
+  if (level === 'graduate') return a[0] === 0 ? 'v1.0.0' : `v${a[0]}.${a[1]}.${a[2]}`;
+  return `v${a[0]}.${a[1]}.${a[2]}`;
+}
+function versionLogEntry(version, event) {
+  return { version, level: event, reason: VER_REASONS[event] || '', at: new Date().toISOString().slice(0, 10) };
+}
+
+// versionLog → 마크다운 `## 변경 이력` 표(버전=1열, 최신=마지막 행: spec-parse 규약).
+function buildHistoryTable(versionLog) {
+  const rows = (versionLog || []).map((e) =>
+    `| ${e.version} | ${e.at || ''} | ${String(e.reason || '').replace(/\|/g, '/')} |`);
+  return ['| 버전 | 날짜 | 변경 내용 |', '|------|------|-----------|', ...rows].join('\n');
+}
+// spec.md 의 `## 변경 이력` 섹션을 versionLog 기반 표로 교체(없으면 말미에 추가). 번호 접두사 보존.
+function injectVersionHistory(specBody, versionLog) {
+  if (!versionLog || !versionLog.length) return specBody;
+  const table = buildHistoryTable(versionLog);
+  const lines = String(specBody).replace(/\r\n/g, '\n').split('\n');
+  const isHist = (l) => /^##\s+(?:\d+\.\s*)?변경\s*이력\s*$/.test(l);
+  const start = lines.findIndex(isHist);
+  if (start < 0) {
+    return String(specBody).replace(/\n*$/, '') + `\n\n## 변경 이력\n\n${table}\n`;
+  }
+  let end = lines.length;
+  for (let i = start + 1; i < lines.length; i++) { if (/^##\s+/.test(lines[i])) { end = i; break; } }
+  const prefixMatch = lines[start].match(/^##\s+(\d+\.\s*)?/);
+  const prefix = prefixMatch && prefixMatch[1] ? prefixMatch[1] : '';
+  const before = lines.slice(0, start).join('\n').replace(/\n*$/, '');
+  const after = lines.slice(end).join('\n').replace(/^\n*/, '');
+  let out = `${before}\n\n## ${prefix}변경 이력\n\n${table}\n`;
+  if (after) out += `\n${after}`;
+  return out;
+}
+
 function prTemplate(f) {
   return [
     `## 스펙 PR — ${f.title}`,
@@ -224,10 +276,21 @@ exports.githubWebhook = onRequest(
 
     const q = await db.collection('features').where('prNumber', '==', pr.number).limit(1).get();
     if (q.empty) return res.status(204).send();
-    await q.docs[0].ref.update({
+    const doc = q.docs[0];
+    const fdata = doc.data() || {};
+    const patch = {
       status: pr.merged ? 'merged' : 'pr_closed',
       updatedAt: admin.firestore.FieldValue.serverTimestamp(),
-    });
+    };
+    // 최초 머지 → 0.x 를 v1.0.0 으로 승격(코드 착지 = 릴리스). syncFromWebhook(프론트 테스트)과 동일.
+    if (pr.merged) {
+      const nv = bumpVersion(fdata.specVersion, 'graduate');
+      if (nv !== fdata.specVersion) {
+        patch.specVersion = nv;
+        patch.versionLog = admin.firestore.FieldValue.arrayUnion(versionLogEntry(nv, 'graduate'));
+      }
+    }
+    await doc.ref.update(patch);
     return res.status(200).send('ok');
   }
 );
