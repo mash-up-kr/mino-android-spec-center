@@ -288,6 +288,16 @@ table.feature-table { width: 100%; border-collapse: collapse; }
 .paste-tall { min-height: 460px; }
 .task-preview { margin-top: 8px; font-size: 12px; color: var(--muted); }
 
+/* 업로드: 편집기 ↔ 라이브 프리뷰 2단 */
+.upload-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; align-items: start; }
+.upload-preview { position: sticky; top: 0; }
+.upload-preview .lbl { margin-bottom: 6px; }
+.up-preview {
+  border: 1px solid var(--border); border-radius: 10px; padding: 14px 16px;
+  max-height: 64vh; overflow: auto; background: var(--bg);
+}
+@media (max-width: 900px) { .upload-grid { grid-template-columns: 1fr; } }
+
 /* 문서 단계 */
 .stage-row { display: flex; gap: 8px; }
 .stage {

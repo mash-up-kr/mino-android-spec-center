@@ -149,7 +149,10 @@
     $('#btn-new').style.display = auth.isDeveloper() ? '' : 'none';
   }
   const openModal = (id) => $('#' + id).classList.remove('hidden');
-  const closeModal = (id) => $('#' + id).classList.add('hidden');
+  const closeModal = (id) => {
+    if (id === 'upload-modal') clearUploadObjUrls(); // 프리뷰 objectURL 누수 방지
+    $('#' + id).classList.add('hidden');
+  };
 
   function resetFilters() {
     state.status = 'all'; state.quick.clear(); state.search = '';
@@ -611,17 +614,63 @@
         <span>로컬 <code>spec-gen</code> 산출물 <code>spec.md</code> 전문을 붙여넣거나 파일을 드롭하세요.
         첫 줄 <code>&lt;!-- feature: slug --&gt;</code> 주석이 필요합니다.</span>
       </div>
-      <div id="dropzone" class="dropzone">spec.md / 이미지 파일을 여기로 drag-drop
-        <input type="file" id="file-input" multiple accept=".md,.png,.jpg,.jpeg" hidden />
-        <button class="btn-add" type="button" id="btn-pick">파일 선택</button></div>
-      <textarea id="up-spec" class="paste-area paste-tall" placeholder="<!-- feature: now-openchat -->\n# 제목\n\n## 1. 한눈에 보기\n...">${esc(body)}</textarea>
-      <div class="up-assets-wrap"><div class="lbl">업로드 이미지 (assets/)</div><div id="up-assets" class="up-assets"></div></div>
-      <label class="lbl" style="margin-top:8px">출처 Figma URL (줄당 1개)</label>
-      <textarea id="up-figma" class="paste-area" style="min-height:54px" placeholder="https://www.figma.com/design/...">${esc(figma)}</textarea>
-      <div id="up-errors" class="up-errors"></div>`;
+      <div class="upload-grid">
+        <div class="upload-editor">
+          <div id="dropzone" class="dropzone">spec.md / 이미지 파일을 여기로 drag-drop
+            <input type="file" id="file-input" multiple accept=".md,.png,.jpg,.jpeg" hidden />
+            <button class="btn-add" type="button" id="btn-pick">파일 선택</button></div>
+          <textarea id="up-spec" class="paste-area paste-tall" placeholder="<!-- feature: now-openchat -->\n# 제목\n\n## 1. 한눈에 보기\n...">${esc(body)}</textarea>
+          <div class="up-assets-wrap"><div class="lbl">업로드 이미지 (assets/)</div><div id="up-assets" class="up-assets"></div></div>
+          <label class="lbl" style="margin-top:8px">출처 Figma URL (줄당 1개)</label>
+          <textarea id="up-figma" class="paste-area" style="min-height:54px" placeholder="https://www.figma.com/design/...">${esc(figma)}</textarea>
+          <div id="up-errors" class="up-errors"></div>
+        </div>
+        <div class="upload-preview">
+          <div class="lbl">미리보기</div>
+          <div id="up-preview" class="md up-preview"></div>
+        </div>
+      </div>`;
     renderUpAssets();
     wireDropzone();
+    $('#up-spec').addEventListener('input', schedulePreview);
+    renderPreview();
     openModal('upload-modal');
+  }
+
+  // ── 라이브 마크다운 프리뷰 (업로드 모달) ──
+  let previewTimer = null;
+  const uploadObjUrls = new Set();
+  function clearUploadObjUrls() { uploadObjUrls.forEach((u) => URL.revokeObjectURL(u)); uploadObjUrls.clear(); }
+  function schedulePreview() { clearTimeout(previewTimer); previewTimer = setTimeout(renderPreview, 180); }
+  function renderPreview() {
+    const el = $('#up-preview'); if (!el) return;
+    clearUploadObjUrls();
+    const body = ($('#up-spec') && $('#up-spec').value) || '';
+    el.innerHTML = body.trim() ? mdToHtml(body) : '<div class="feat-sub">내용을 입력하면 여기에 렌더됩니다.</div>';
+    resolveUploadImgs(el);
+  }
+  // 프리뷰의 assets/* 이미지 → 새로 드롭한 File(objectURL) 또는 기존 Storage(assetUrl) 로 해석
+  function resolveUploadImgs(root) {
+    root.querySelectorAll('img').forEach((img) => {
+      const raw = img.getAttribute('src') || '';
+      const m = raw.match(/^\.?\/?assets\/(.+)$/);
+      if (!m) return;
+      const name = m[1];
+      img.removeAttribute('src');
+      img.classList.add('asset-loading');
+      const a = (uploadCtx.assets || []).find((x) => x.name === name);
+      if (a && a.file) {
+        const u = URL.createObjectURL(a.file); uploadObjUrls.add(u);
+        img.src = u; img.classList.remove('asset-loading');
+      } else if (a && a.storagePath && features.assetUrl && uploadCtx.featureId) {
+        Promise.resolve(features.assetUrl(uploadCtx.featureId, name)).then((url) => {
+          img.classList.remove('asset-loading');
+          if (url) img.src = url; else img.replaceWith(brokenAsset(name));
+        });
+      } else {
+        img.classList.remove('asset-loading'); img.replaceWith(brokenAsset(name));
+      }
+    });
   }
   function renderUpAssets() {
     const el = $('#up-assets');
@@ -630,6 +679,7 @@
       `<span class="asset-chip mono">${esc(a.name)}<button data-rm="${i}" aria-label="삭제">×</button></span>`).join('');
     el.querySelectorAll('button[data-rm]').forEach((b) =>
       b.addEventListener('click', () => { uploadCtx.assets.splice(+b.dataset.rm, 1); renderUpAssets(); }));
+    schedulePreview(); // 이미지 추가/삭제 → 프리뷰 재해석
   }
   function addAssets(files) {
     files.forEach((f) => { if (!uploadCtx.assets.some((a) => a.name === f.name)) uploadCtx.assets.push({ name: f.name, file: f }); });
@@ -649,7 +699,7 @@
     files.forEach((file) => {
       if (/\.md$/i.test(file.name)) {
         const reader = new FileReader();
-        reader.onload = () => { $('#up-spec').value = reader.result; };
+        reader.onload = () => { $('#up-spec').value = reader.result; renderPreview(); };
         reader.readAsText(file);
       } else if (/\.(png|jpe?g)$/i.test(file.name)) {
         imgs.push(file);
@@ -679,6 +729,7 @@
       figmaSources, assets: uploadCtx.assets.map((a) => ({ name: a.name, file: a.file || null, storagePath: a.storagePath || '' })),
     });
     if (!r.ok) return uploadMsg(r.error || '저장 실패');
+    clearUploadObjUrls();
     closeModal('upload-modal');
     if (r.invalidated) alert('승인된 spec을 수정해 무효화되었습니다 → 작성중으로 복귀, plan은 stale 처리됩니다.');
     select(r.feature.featureId); renderAll();
