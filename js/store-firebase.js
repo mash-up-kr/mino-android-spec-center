@@ -382,7 +382,10 @@
       for (let k = log.length - 1; k >= 0; k--) {
         if (log[k].version === version) { log[k].reason = reason; break; }
       }
-      await db.doc('features/' + id).update({ versionLog: log, updatedAt: serverTs() });
+      // 사유 갱신 후 저장본에도 재주입 → 'spec 보기'·커밋 파일과 일치
+      await db.doc('features/' + id).update({
+        versionLog: log, specBody: VER.injectVersionHistory(f.specBody, log), updatedAt: serverTs(),
+      });
       return { ok: true, feature: { featureId: id } };
     },
   };

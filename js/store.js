@@ -254,6 +254,8 @@
       for (let k = log.length - 1; k >= 0; k--) {
         if (log[k].version === version) { log[k].reason = reason; break; }
       }
+      // 사유 갱신 후 저장본에도 재주입 → 'spec 보기'·커밋 파일과 일치
+      f.specBody = VER.injectVersionHistory(f.specBody, log);
       f.updatedAt = today(); persist();
       return { ok: true, feature: this.get(id) };
     },
