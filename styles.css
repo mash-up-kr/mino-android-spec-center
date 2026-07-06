@@ -329,6 +329,8 @@ table.feature-table { width: 100%; border-collapse: collapse; }
 .md code { background: var(--bg); padding: 1px 5px; border-radius: 5px; font-size: 12px; }
 .md a { color: var(--accent); }
 .md img { max-width: 100%; height: auto; border: 1px solid var(--border); border-radius: 8px; margin: 6px 0; display: block; }
+.md img.asset-loading { min-height: 60px; background: var(--border); opacity: .5; }
+.asset-missing { border: 1px dashed var(--border); border-radius: 8px; padding: 10px 12px; margin: 6px 0; }
 .md table { width: 100%; border-collapse: collapse; margin: 8px 0; font-size: 12.5px; }
 .md th, .md td { border: 1px solid var(--border); padding: 7px 9px; text-align: left; vertical-align: top; }
 .md th { background: var(--bg); font-weight: 600; white-space: nowrap; }

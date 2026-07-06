@@ -62,6 +62,12 @@
     subscribe() { /* mock: 쓰기 후 app.js가 직접 renderAll (no-op) */ },
     all() { return JSON.parse(JSON.stringify(store)); },
     get(id) { const i = idxOf(id); return i < 0 ? null : JSON.parse(JSON.stringify(store[i])); },
+    // mock: Storage 없음 — seed의 data:/http URL 이면 그대로, 아니면 미해석('').
+    assetUrl(featureId, name) {
+      const f = store[idxOf(featureId)];
+      const a = f && (f.assets || []).find((x) => x.name === name);
+      return Promise.resolve(a && /^(data:|https?:)/.test(a.storagePath || '') ? a.storagePath : '');
+    },
 
     blank() {
       return {

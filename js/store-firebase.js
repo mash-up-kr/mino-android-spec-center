@@ -38,6 +38,22 @@
     return out;
   }
 
+  // spec 본문의 `assets/{name}` 이미지 → Storage 다운로드 URL(토큰 포함) 해석.
+  // 결과를 storagePath 기준으로 캐시해 재열람 시 재요청하지 않는다.
+  const urlCache = new Map();
+  async function assetUrl(featureId, name) {
+    const path = `features/${featureId}/assets/${name}`;
+    if (urlCache.has(path)) return urlCache.get(path);
+    try {
+      const url = await storage.ref(path).getDownloadURL();
+      urlCache.set(path, url);
+      return url;
+    } catch (e) {
+      console.error('assetUrl', path, e && e.code);
+      return '';
+    }
+  }
+
   const ENUMS = {
     status: ['spec_draft', 'spec_in_review', 'spec_changes_requested', 'spec_approved',
       'plan_drafted', 'pr_open', 'merged', 'pr_closed'],
@@ -197,6 +213,7 @@
     all() { return cache.map((f) => JSON.parse(JSON.stringify(f))); },
     get(id) { const f = findCache(id); return f ? JSON.parse(JSON.stringify(f)) : null; },
     subscribe(cb) { dataCbs.push(cb); },
+    assetUrl,
 
     async saveSpec(input) {
       if (!auth.isDeveloper()) return { ok: false, error: 'spec 작성은 개발자만 가능합니다.' };

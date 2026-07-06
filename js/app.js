@@ -287,6 +287,31 @@
     closeList(); return html;
   }
 
+  // spec 본문의 `assets/{name}` 상대경로 img → Storage 다운로드 URL 로 치환.
+  // (마크다운은 assets/ 상대경로로 커밋되지만 대시보드엔 그 경로가 없어 404 나던 문제)
+  function resolveAssetImgs(root, f) {
+    if (!f || !features.assetUrl) return;
+    root.querySelectorAll('img').forEach((img) => {
+      const raw = img.getAttribute('src') || '';
+      const m = raw.match(/^\.?\/?assets\/(.+)$/);
+      if (!m) return;
+      const name = m[1];
+      img.removeAttribute('src'); // 상대경로 그대로 두면 404 깜빡임 → 즉시 제거 후 해석
+      img.classList.add('asset-loading');
+      Promise.resolve(features.assetUrl(f.featureId, name)).then((url) => {
+        img.classList.remove('asset-loading');
+        if (url) { img.src = url; }
+        else { img.replaceWith(brokenAsset(name)); }
+      });
+    });
+  }
+  function brokenAsset(name) {
+    const el = document.createElement('div');
+    el.className = 'asset-missing feat-sub';
+    el.textContent = `🖼️ 이미지 없음: assets/${name}`;
+    return el;
+  }
+
   // 리뷰 모드 상태 (디자이너가 spec_in_review spec에 코멘트 달 때)
   let reviewState = null; // { featureId, comments: [{section, body}] }
 
@@ -299,6 +324,7 @@
     $('#doc-modal-title').textContent = `${f.title} · ${kind === 'plan' ? 'plan' : 'spec'}`;
     const bodyEl = $('#doc-modal-body');
     bodyEl.innerHTML = (body && body.trim()) ? mdToHtml(body) : '<div class="feat-sub">본문 없음.</div>';
+    resolveAssetImgs(bodyEl, f);
 
     const foot = $('#doc-foot'), hint = $('#doc-review-hint');
     if (reviewMode) {
