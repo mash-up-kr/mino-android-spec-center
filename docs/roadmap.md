@@ -90,7 +90,7 @@
 - [x] (BE) `githubWebhook` — `pull_request` 수신 + HMAC 검증 — **e2e 검증 완료(PR #55 close → delivery 200)**
 - [~] merged → `merged` / 미머지 close → `pr_closed` — **close 경로 검증 완료**(PR #55 → `pr_closed`). merged 경로는 동일 코드분기지만 미검증(더미 PR을 develop에 머지 안 함)
 - [x] 무효화 연쇄 — approved 후 spec 수정 시: `spec_draft` 복귀 + `planStale=true` (로직)
-- [x] 무효화 시 열린 PR 자동 close — **함수 `closeSpecPR` 배포**(개발자 토큰, 코멘트+close, head 브랜치 검증). saveSpec이 Firestore `prNumber=null` 선갱신 후 호출 → close 웹훅 매칭 실패로 `spec_draft` 유지(레이스 방지). e2e 검증 남음
+- [x] 무효화 시 열린 PR 자동 close — **함수 `closeSpecPR`** (개발자 토큰, 코멘트+close, head 브랜치 검증). saveSpec이 Firestore `prNumber=null` 선갱신 후 호출 → close 웹훅 매칭 실패로 `spec_draft` 유지(레이스 방지). **e2e 검증 완료(2026-07-06, PR #62: close+무효화 코멘트, spec_draft 복귀, 레이스 방지 확인)**. UI: pr_open 상세에 'spec 수정' 버튼 추가(app.js)
 - [x] specVersion 증가(새 브랜치/PR) — 재PR 시 `createSpecPR`가 `docs/spec-{slug}-{새버전}` 브랜치 자동 생성(추가 코드 불필요)
 - [x] (ops) `Team-MINO-Android` CODEOWNERS `docs/specs/** @안드3인` — **PR #54 머지 완료**. (강제하려면 develop 브랜치 보호에 "Require review from Code Owners" 활성화 필요) ([mino_android.md] 소관)
 
