@@ -569,11 +569,13 @@
     minor: badge('MINOR', 'amber'), major: badge('MAJOR', 'red'), graduate: badge('릴리스', 'green'),
   };
   function versionHistoryHtml(f, isDev) {
-    const log = f.versionLog || [];
-    if (!log.length) return '';
+    let log = f.versionLog || [];
+    // 자동 버저닝 이전 스펙: 로그가 없으면 현재 버전을 표시 전용 한 줄로 폴백(편집 불가).
+    const legacy = !log.length;
+    if (legacy) log = [{ version: f.specVersion || 'v0.1.0', level: 'legacy', at: '', reason: '자동 이력 도입 이전 스펙' }];
     const items = log.slice().reverse().map((e) => {
-      const tag = VER_TAG[e.level] || badge(e.level, 'gray');
-      const editBtn = isDev
+      const tag = VER_TAG[e.level] || badge(e.level === 'legacy' ? '현재' : e.level, 'gray');
+      const editBtn = (isDev && !legacy)
         ? `<button class="ver-edit" data-edit-ver="${esc(e.version)}" data-reason="${esc(e.reason || '')}" title="사유 편집">✏️</button>`
         : '';
       return `<div class="ver-item">
