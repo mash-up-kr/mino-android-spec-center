@@ -479,6 +479,8 @@
         btns.push(`<button class="btn-ghost" data-act="edit-plan">plan 수정</button>`);
         btns.push(`<button class="btn-primary" data-act="create-pr">PR 생성</button>`);
       } else if (f.status === 'pr_open') {
+        // spec 수정 시 무효화 연쇄(closeSpecPR로 PR 자동 close + spec_draft 복귀)
+        btns.push(`<button class="btn-ghost" data-act="edit-spec">spec 수정</button>`);
         btns.push(`<a class="btn-primary" href="${f.prUrl}" target="_blank" rel="noopener">PR #${f.prNumber} 보기</a>`);
         // mock: Webhook 시뮬레이션
         btns.push(`<button class="btn-ghost" data-act="sim-merged">[mock] merged</button>`);
