@@ -512,9 +512,11 @@
         // spec 수정 시 무효화 연쇄(closeSpecPR로 PR 자동 close + spec_draft 복귀)
         btns.push(`<button class="btn-ghost" data-act="edit-spec">spec 수정</button>`);
         btns.push(`<a class="btn-primary" href="${f.prUrl}" target="_blank" rel="noopener">PR #${f.prNumber} 보기</a>`);
-        // mock: Webhook 시뮬레이션
-        btns.push(`<button class="btn-ghost" data-act="sim-merged">[mock] merged</button>`);
-        btns.push(`<button class="btn-ghost" data-act="sim-closed">[mock] closed</button>`);
+        // Webhook 시뮬레이션은 mock 전용 — firebase 는 실 웹훅(Admin)이 merged/closed 처리(보안규칙상 클라 전이 불가)
+        if (!FB) {
+          btns.push(`<button class="btn-ghost" data-act="sim-merged">[mock] merged</button>`);
+          btns.push(`<button class="btn-ghost" data-act="sim-closed">[mock] closed</button>`);
+        }
       } else if (f.status === 'merged') {
         // 머지된 스펙 수정 → MAJOR 무효화(코드 반영본 변경). 새 PR 라운드로 이어짐.
         btns.push(`<button class="btn-ghost" data-act="edit-spec">spec 수정</button>`);
