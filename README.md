@@ -151,6 +151,7 @@ Firebase 없이 **mock 데이터로만** 띄우려면 `js/firebase-config.js`의
     ├─ design/                  # 설계 명세 — state-machine · data-model · validation
     ├─ ops/                     # 운영 — infra-playbook · roadmap
     ├─ role/                    # 역할별 사용법 — DEVELOPER · DESIGNER
+    ├─ v2/                      # 확장 설계(미착수) — impl-tracking · discussion · notifications
     ├─ examples/                # 예시 spec
     └─ images/                  # README 캡쳐
 ```
