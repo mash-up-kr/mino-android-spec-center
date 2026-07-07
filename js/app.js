@@ -70,7 +70,6 @@
     $('#login-users').innerHTML =
       `<button class="login-user" id="gh-login">
         <span class="avatar">GH</span><span class="lu-name">GitHub로 로그인</span>
-        <span class="lu-gh mono">mash-up-kr</span>
       </button>`;
     $('#gh-login').addEventListener('click', async () => {
       const r = await auth.loginGithub();
