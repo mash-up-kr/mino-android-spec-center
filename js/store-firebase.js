@@ -351,7 +351,12 @@
         const res = await fn({ featureId: id });
         return { ok: true, feature: { featureId: id }, pr: res.data };
       } catch (e) {
-        return { ok: false, error: 'PR 생성 실패(Function): ' + e.message };
+        // GitHub 권한/토큰 문제(401/403/404·토큰없음)는 authIssue 로 표시 → 프론트가 안내 모달
+        const authIssue = (e.code || '').indexOf('permission-denied') >= 0
+          || /GITHUB_AUTH/.test(e.message || '');
+        const msg = /GITHUB_AUTH:\s*/.test(e.message || '')
+          ? (e.message || '').replace(/^.*GITHUB_AUTH:\s*/, '') : (e.message || 'PR 생성 실패');
+        return { ok: false, error: msg, authIssue };
       }
     },
 

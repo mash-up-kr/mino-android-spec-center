@@ -73,7 +73,7 @@ exports.createSpecPR = onCall(async (request) => {
   const f = featSnap.data();
   if (user.role !== 'developer') throw new HttpsError('permission-denied', '개발자만 PR 생성');
   if (f.status !== 'plan_drafted') throw new HttpsError('failed-precondition', 'plan_drafted 상태에서만 PR 생성');
-  if (!user.githubToken) throw new HttpsError('failed-precondition', 'GitHub App 연결 필요(토큰 없음)');
+  if (!user.githubToken) throw new HttpsError('permission-denied', 'GITHUB_AUTH: GitHub 연결이 없습니다(토큰 없음). 다시 로그인하세요.');
 
   const octokit = new Octokit({ auth: user.githubToken });
   const slug = f.slug;
@@ -125,9 +125,20 @@ exports.createSpecPR = onCall(async (request) => {
     });
     return { prNumber: pr.data.number, prUrl: pr.data.html_url };
   } catch (e) {
-    throw new HttpsError('internal', `PR 생성 실패: ${e.message}`);
+    throw githubError(e, 'PR 생성 실패');
   }
 });
+
+// GitHub(Octokit) 에러를 유형별 HttpsError 로 변환.
+// 401/403/404 = 권한/토큰 문제 → 'permission-denied' + GITHUB_AUTH 마커(프론트가 안내 모달로 분기).
+function githubError(e, prefix) {
+  const st = e && (e.status || (e.response && e.response.status));
+  if (st === 401 || st === 403 || st === 404) {
+    return new HttpsError('permission-denied',
+      `GITHUB_AUTH: GitHub 권한이 없거나 연결이 만료됐습니다(${st}). 다시 로그인하거나 대상 레포 push 권한을 확인하세요.`);
+  }
+  return new HttpsError('internal', `${prefix}: ${e && e.message}`);
+}
 
 // ============ 2b) PR close (무효화 연쇄) ============
 // data: { featureId, prNumber, reason }. 개발자 토큰으로 열린 spec PR 을 닫는다.
@@ -145,7 +156,7 @@ exports.closeSpecPR = onCall(async (request) => {
   ]);
   const user = userSnap.data() || {};
   if (user.role !== 'developer') throw new HttpsError('permission-denied', '개발자만 PR close');
-  if (!user.githubToken) throw new HttpsError('failed-precondition', 'GitHub App 연결 필요(토큰 없음)');
+  if (!user.githubToken) throw new HttpsError('permission-denied', 'GITHUB_AUTH: GitHub 연결이 없습니다(토큰 없음). 다시 로그인하세요.');
   const slug = (featSnap.exists && featSnap.data().slug) || '';
 
   const octokit = new Octokit({ auth: user.githubToken });
@@ -165,7 +176,7 @@ exports.closeSpecPR = onCall(async (request) => {
     return { closed: true, prNumber };
   } catch (e) {
     if (e instanceof HttpsError) throw e;
-    throw new HttpsError('internal', `PR close 실패: ${e.message}`);
+    throw githubError(e, 'PR close 실패');
   }
 });
 

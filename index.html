@@ -4,7 +4,7 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>MASC · Mino Android Spec Center</title>
-  <link rel="stylesheet" href="styles.css?v=10" />
+  <link rel="stylesheet" href="styles.css?v=11" />
 </head>
 <body>
   <!-- 부팅 에러를 빈 화면 대신 표면화 -->
@@ -161,6 +161,31 @@
       </div>
     </div>
 
+    <!-- GitHub 권한/토큰 문제 안내 (revoke/403 폴백) -->
+    <div id="auth-help-modal" class="modal-overlay hidden">
+      <div class="modal-card">
+        <div class="modal-head">
+          <h2>GitHub 권한 문제</h2>
+          <button class="modal-close" data-close="auth-help-modal" aria-label="닫기">×</button>
+        </div>
+        <div class="modal-body">
+          <p class="auth-help-detail" id="auth-help-detail">GitHub 권한이 없거나 연결이 만료됐습니다.</p>
+          <div class="auth-help-causes">
+            <div class="lbl">가능한 원인</div>
+            <ul>
+              <li>로그인 연결(토큰)이 <b>만료</b>되었거나 GitHub에서 <b>권한을 취소</b>함</li>
+              <li>대상 레포 <code>Team-MINO-Android</code>에 <b>push 권한</b>이 없음 (org 멤버·협업자 확인)</li>
+            </ul>
+          </div>
+          <div class="auth-help-actions">
+            <button class="btn-primary" id="auth-relogin">🔄 다시 로그인</button>
+            <a class="btn-ghost" href="https://github.com/settings/apps/authorizations" target="_blank" rel="noopener">GitHub 권한 설정 열기</a>
+          </div>
+          <p class="feat-sub" style="margin-top:10px">다시 로그인해 연결을 갱신한 뒤 PR 생성을 다시 시도하세요.</p>
+        </div>
+      </div>
+    </div>
+
     <!-- 버전 diff 모달 (재검토 변경분 · 버전 비교) -->
     <div id="diff-modal" class="modal-overlay hidden">
       <div class="modal-card modal-xwide">
@@ -208,8 +233,8 @@
   <script src="js/spec-parse.js?v=4"></script>
   <script src="js/validate.js?v=4"></script>
   <script src="js/version.js?v=3"></script>
-  <script src="js/store-firebase.js?v=15"></script>
+  <script src="js/store-firebase.js?v=16"></script>
   <script src="js/store.js?v=14"></script>
-  <script src="js/app.js?v=16"></script>
+  <script src="js/app.js?v=17"></script>
 </body>
 </html>

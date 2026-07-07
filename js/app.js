@@ -143,6 +143,10 @@
 
     $('#upload-save').addEventListener('click', saveUpload);
     $('#plan-save').addEventListener('click', savePlan);
+    $('#auth-relogin').addEventListener('click', async () => {
+      closeModal('auth-help-modal');
+      if (auth.loginGithub) { await auth.loginGithub(); } // 토큰 갱신 → 이후 PR 재시도
+    });
     $('#doc-approve').addEventListener('click', approveFromReview);
     $('#doc-reject').addEventListener('click', rejectFromReview);
 
@@ -566,8 +570,18 @@
 
   async function doTransition(fn) {
     const r = await fn();
-    if (!r.ok) { alert(r.error || '실패'); return; }
+    if (!r.ok) {
+      if (r.authIssue) return showAuthHelp(r.error); // GitHub 권한/토큰 문제 → 안내 모달
+      alert(r.error || '실패'); return;
+    }
     renderAll();
+  }
+
+  // GitHub 권한/토큰 실패 시 우아한 안내(재로그인·권한 확인)
+  function showAuthHelp(msg) {
+    const el = $('#auth-help-detail');
+    if (el) el.textContent = msg || 'GitHub 권한이 없거나 연결이 만료됐습니다.';
+    openModal('auth-help-modal');
   }
 
   function reviewsHtml(f) {

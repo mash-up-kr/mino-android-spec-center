@@ -477,6 +477,14 @@ table.feature-table { width: 100%; border-collapse: collapse; }
 .diff-line.del { background: var(--red-bg); color: var(--red); }
 .diff-gap { padding: 3px 12px; color: var(--muted); font-size: 11px; text-align: center; background: var(--gray-bg); }
 
+/* GitHub 권한 안내 모달 */
+.auth-help-detail { font-size: 13.5px; color: var(--text); margin-bottom: 14px; }
+.auth-help-causes { margin-bottom: 16px; }
+.auth-help-causes ul { margin: 6px 0 0; padding-left: 18px; font-size: 13px; color: var(--muted); }
+.auth-help-causes li { margin: 4px 0; }
+.auth-help-causes b { color: var(--text); }
+.auth-help-actions { display: flex; gap: 10px; align-items: center; }
+
 /* Skill guide */
 .skill-steps { margin: 6px 0; padding-left: 20px; line-height: 1.9; }
 .skill-steps code { background: var(--bg); padding: 1px 5px; border-radius: 4px; font-size: 12px; }
