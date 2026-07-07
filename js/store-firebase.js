@@ -124,13 +124,18 @@
       githubLogin: login,
       role,
     };
-    // 프로필 기본 필드 + (있으면) GitHub 토큰 갱신
+    // 프로필 기본 필드 갱신 (토큰은 Firestore 에 저장하지 않는다 — 아래 Secret Manager 경유)
     const data = { name: current.name, githubLogin: login };
-    if (pendingLogin && pendingLogin.token) data.githubToken = pendingLogin.token;
     try {
       if (snap && snap.exists) await ref.set(data, { merge: true });
       else await ref.set(Object.assign({ role: null, createdAt: serverTs() }, data), { merge: true });
     } catch (e) { console.error('users.set', e); }
+    // GitHub 토큰 → storeGithubToken(callable) → Secret Manager. 로그인을 막지 않는다 —
+    // 실패 시 PR 생성 시점의 GITHUB_AUTH 에러가 재로그인을 유도(기존 폴백 경로).
+    if (pendingLogin && pendingLogin.token) {
+      firebase.functions().httpsCallable('storeGithubToken')({ token: pendingLogin.token })
+        .catch((e) => console.error('storeGithubToken', e));
+    }
     pendingLogin = null;
     subscribeAll();
     notifyAuth();

@@ -86,11 +86,32 @@ docs/specs/** @<리뷰 담당 핸들>
 
 ---
 
+## E. 사용자 GitHub 토큰 → Secret Manager (Post-MVP 운영 전환)
+
+> 코드: [functions/token-store.js](../../functions/token-store.js) — 로그인 팝업 토큰을
+> `storeGithubToken`(callable)이 사용자별 시크릿 `user-gh-token-{uid}` 로 저장.
+> Firestore `users/{uid}.githubToken` 평문 저장 폐지. 레거시 필드는 첫 PR 생성/close 시 자동 이관 후 삭제.
+
+1. **(ops) 함수 런타임 SA 에 Secret Manager 권한 부여** — 시크릿 생성/버전추가/파기/접근이 필요하므로 admin 롤:
+   ```bash
+   # PROJECT_NUMBER 확인: gcloud projects describe mino-spec-center --format='value(projectNumber)'
+   gcloud projects add-iam-policy-binding mino-spec-center \
+     --member=serviceAccount:<PROJECT_NUMBER>-compute@developer.gserviceaccount.com \
+     --role=roles/secretmanager.admin
+   ```
+   (Secret Manager API 는 기존 `functions:secrets:set` 사용으로 이미 활성화됨)
+2. **배포**: `cd functions && npm install && cd ..` → `firebase deploy --only functions,firestore:rules`
+3. **검증**: 재로그인 → Functions 로그에 `storeGithubToken` 성공 + Firestore `users/{uid}` 에 `githubToken` 필드 없음 → PR 생성 1회 동작 확인
+4. **(ops) 잔여 평문 정리**: 재로그인/PR 생성을 안 거친 사용자 문서에 `githubToken` 이 남아 있으면 Firebase 콘솔에서 필드 수동 삭제 (수 명 규모)
+
+→ **산출물**: 토큰이 Secret Manager 로만 흐름 (Firestore 평문 0)
+
+---
+
 ## 체크 (완료 표시)
 - [x] A: GitHub App 등록 + 설치 → App ID/Client ID/Secret/Webhook secret 확보
 - [x] B-1: Firebase 프로젝트 + Blaze + Auth(GitHub)/Firestore/Storage + webConfig
 - [x] B-2: firebase-config.js 채움 · secrets 등록 · rules/functions 배포
 - [x] C: Webhook URL 역기입 + PR 라운드트립 확인 — 역기입·HMAC + **PR 라운드트립 e2e 완료**(PR #55: pr_open→pr_closed). merged 경로만 실 머지 미검증
 - [x] D: CODEOWNERS (`docs/specs/** @JaesungLeee @simeunseok @KateteDeveloper`) — PR #54 머지 완료
-
-> 후순위(Post-MVP): 토큰 평문 → Secret Manager(revoke UI/403 폴백은 완료).
+- [ ] E: 사용자 토큰 Secret Manager — 코드 완료, IAM 부여·배포·잔여 평문 정리 남음

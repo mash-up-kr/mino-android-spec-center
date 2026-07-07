@@ -7,6 +7,8 @@
  *
  * 시크릿: GITHUB_CLIENT_ID / GITHUB_CLIENT_SECRET / GITHUB_WEBHOOK_SECRET
  *   firebase functions:secrets:set <NAME> 로 등록 (docs/ops/infra-playbook.md B-2).
+ * 사용자 GitHub 토큰: Secret Manager `user-gh-token-{uid}` (token-store.js).
+ *   Firestore 평문 저장 폐지 — 레거시 필드는 첫 사용 시 자동 이관.
  * 대상 레포: mash-up-kr/Team-MINO-Android · base 브랜치: develop
  */
 const crypto = require('crypto');
@@ -17,6 +19,10 @@ const { Octokit } = require('@octokit/rest');
 
 admin.initializeApp();
 const db = admin.firestore();
+
+// ===================== 0) 사용자 토큰 (Secret Manager, token-store.js) =====================
+const { getUserToken, storeGithubToken } = require('./token-store');
+exports.storeGithubToken = storeGithubToken;
 
 const GITHUB_CLIENT_ID = defineSecret('GITHUB_CLIENT_ID');
 const GITHUB_CLIENT_SECRET = defineSecret('GITHUB_CLIENT_SECRET');
@@ -48,7 +54,7 @@ exports.githubOAuthExchange = onRequest(
       });
       const data = await r.json();
       if (data.error) return res.status(400).json({ error: data.error_description || data.error });
-      // 클라이언트가 users/{uid}.githubToken 에 저장. (MVP 평문 — 운영 시 Secret Manager)
+      // 클라이언트가 storeGithubToken(callable) 로 전달 → Secret Manager 저장.
       return res.json({ access_token: data.access_token, token_type: data.token_type });
     } catch (e) {
       return res.status(500).json({ error: String(e) });
@@ -73,9 +79,10 @@ exports.createSpecPR = onCall(async (request) => {
   const f = featSnap.data();
   if (user.role !== 'developer') throw new HttpsError('permission-denied', '개발자만 PR 생성');
   if (f.status !== 'plan_drafted') throw new HttpsError('failed-precondition', 'plan_drafted 상태에서만 PR 생성');
-  if (!user.githubToken) throw new HttpsError('permission-denied', 'GITHUB_AUTH: GitHub 연결이 없습니다(토큰 없음). 다시 로그인하세요.');
+  const token = await getUserToken(uid, user);
+  if (!token) throw new HttpsError('permission-denied', 'GITHUB_AUTH: GitHub 연결이 없습니다(토큰 없음). 다시 로그인하세요.');
 
-  const octokit = new Octokit({ auth: user.githubToken });
+  const octokit = new Octokit({ auth: token });
   const slug = f.slug;
   const version = f.specVersion || 'v0.1.0';
   const branch = `docs/spec-${slug}-${version}`;
@@ -156,10 +163,11 @@ exports.closeSpecPR = onCall(async (request) => {
   ]);
   const user = userSnap.data() || {};
   if (user.role !== 'developer') throw new HttpsError('permission-denied', '개발자만 PR close');
-  if (!user.githubToken) throw new HttpsError('permission-denied', 'GITHUB_AUTH: GitHub 연결이 없습니다(토큰 없음). 다시 로그인하세요.');
+  const token = await getUserToken(uid, user);
+  if (!token) throw new HttpsError('permission-denied', 'GITHUB_AUTH: GitHub 연결이 없습니다(토큰 없음). 다시 로그인하세요.');
   const slug = (featSnap.exists && featSnap.data().slug) || '';
 
-  const octokit = new Octokit({ auth: user.githubToken });
+  const octokit = new Octokit({ auth: token });
   try {
     const pr = await octokit.pulls.get({ owner: OWNER, repo: REPO, pull_number: prNumber });
     // 안전장치: 이 PR 이 정말 해당 spec 브랜치인지 확인

@@ -14,9 +14,15 @@ service cloud.firestore {
 
     // 사용자 프로필 — 본인만 작성, 로그인 사용자는 읽기(리뷰어 이름 표시용)
     // MVP: role 은 온보딩에서 본인이 선택(자체 서명). PR 권한은 GitHub 토큰이 별도 게이트.
+    // githubToken 평문 저장 금지 — 토큰은 storeGithubToken(Functions) → Secret Manager.
+    // update 는 레거시 필드가 남은 문서의 무관한 갱신은 허용(값 변경만 차단, 이관은 Functions 가 수행).
     match /users/{uid} {
       allow read: if signedIn();
-      allow create, update: if request.auth.uid == uid;
+      allow create: if request.auth.uid == uid
+        && !('githubToken' in request.resource.data);
+      allow update: if request.auth.uid == uid
+        && (!('githubToken' in request.resource.data)
+            || request.resource.data.githubToken == resource.data.get('githubToken', null));
       allow delete: if false;
     }
 

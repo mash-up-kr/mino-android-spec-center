@@ -196,13 +196,13 @@ spec_draft ──(컨펌요청)──▶ spec_in_review ──(승인)──▶ 
 - GitHub App + 사용자 인증 토큰 → PR이 **개발자 본인 명의** (클래식 OAuth 광범위 권한 회피).
 - 권한: **Contents r/w + Pull requests write** (이 레포 한정).
 - **"Expire user authorization tokens" OFF** → 한 번 인증하면 만료 없이 사용, refresh 불필요.
-- **로그인 = GitHub 통합**: Firebase Auth GitHub provider **팝업 로그인**으로 단일화. 팝업 결과의 `credential.accessToken`(user-to-server 토큰)을 **직접** `users/{uid}.githubToken`에 저장해 PR 생성에 재사용한다 → 로그인과 PR 토큰을 한 흐름에. Client Secret은 Firebase Auth 설정에만 두고 프론트 노출 금지.
+- **로그인 = GitHub 통합**: Firebase Auth GitHub provider **팝업 로그인**으로 단일화. 팝업 결과의 `credential.accessToken`(user-to-server 토큰)을 `storeGithubToken`(callable)로 전달해 **Secret Manager**에 저장, PR 생성에 재사용한다 → 로그인과 PR 토큰을 한 흐름에. Client Secret은 Firebase Auth 설정에만 두고 프론트 노출 금지.
   - 콜백 = Firebase 핸들러 `https://<project>.firebaseapp.com/__/auth/handler` (GitHub App Callback URL 목록에 등록). Pages `/auth/callback` 아님.
   - `githubOAuthExchange` Function은 **팝업 토큰이 Contents/PR 권한을 못 가질 경우의 폴백**으로만 둔다(M3에서 검증해 필요 여부 확정).
 - **역할 분기**(디자이너 예외): 디자이너도 GitHub 계정으로 **로그인만** 한다. PR을 여는 개발자만 GitHub App 권한(Contents/PR)이 필요. `users.role`로 기능 분기(디자이너=승인/반려/코멘트, 개발자=작성/plan/PR).
 - **온보딩**: 첫 로그인 시 **역할 선택**(개발자/디자이너) 모달로 `users/{uid}.role` 설정. (※ 현재는 자가선택. "개발자만 App authorize로 자동 식별"은 후속 강화 항목.)
 - **권한 정책**: 팀 전원(개발자) Mino-Android write 권한 유도. 403이면 명확한 에러 안내(폴백).
-- **토큰 저장**: 현재 평문 저장(MVP), 운영 전환 시 Secret Manager + revoke UI.
+- **토큰 저장**: **Secret Manager**(`user-gh-token-{uid}`, functions/token-store.js). 로그인 팝업 토큰을 `storeGithubToken`(callable)로 전달 — Firestore 평문 저장 폐지(레거시 필드는 첫 사용 시 자동 이관). revoke UI 완료.
 
 ---
 
@@ -227,8 +227,8 @@ features/{featureId}
        # comments: [{ section, body }]  · section = spec H2/H3 제목 앵커
 
 users/{uid}
-  ├─ role: developer | designer
-  └─ githubToken: string       # MVP 평문, 운영 시 Secret Manager
+  └─ role: developer | designer
+       # GitHub 토큰은 Firestore 에 두지 않음 — Secret Manager `user-gh-token-{uid}` (5.1)
 ```
 
 ---
