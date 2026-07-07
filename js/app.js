@@ -132,6 +132,17 @@
     $('#btn-legend').addEventListener('click', () => openModal('legend-modal'));
     $('#btn-skill').addEventListener('click', () => openModal('skill-modal'));
 
+    // 역할별 사용법 — 클릭 시 현재 역할 탭을 기본으로 열고, 탭으로 상대 역할도 확인
+    $('#btn-roleguide').addEventListener('click', () => {
+      renderRoleGuide(auth.isDeveloper() ? 'developer' : 'designer');
+      openModal('roleguide-modal');
+    });
+    document.querySelectorAll('#roleguide-tabs .role-tab').forEach((tab) =>
+      tab.addEventListener('click', () => renderRoleGuide(tab.dataset.role)));
+
+    // 디자이너는 문서 생성 스킬을 쓰지 않으므로 스킬 안내 버튼 숨김
+    $('#btn-skill').style.display = auth.isDeveloper() ? '' : 'none';
+
     document.querySelectorAll('[data-close]').forEach((b) =>
       b.addEventListener('click', () => closeModal(b.dataset.close)));
     document.querySelectorAll('.modal-overlay').forEach((m) =>
@@ -190,6 +201,47 @@
         <li><b>plan 생성</b> — spec 승인 후 <code>plan-gen</code> 실행 (레포 체크아웃 안에서) → plan 붙여넣기 → PR 생성</li>
       </ol>
       <div class="legend-note">대시보드는 입력값 치환을 하지 않습니다. 스킬 실행 시 직접 Figma URL·기획서를 전달하세요.</div>`;
+  }
+
+  // ===================== 역할별 사용법 =====================
+  const ROLE_GUIDE = {
+    developer: {
+      intro: `개발자는 스펙을 <b>작성·업로드</b>하고, 디자이너 컨펌을 거쳐 <b>문서 PR까지 배출</b>하는 주체입니다.
+        문서 생성은 대시보드가 아니라 로컬 Claude Code 스킬(<code>스킬 안내</code> 참고)로 합니다.`,
+      steps: [
+        `<b>스펙 작성 (로컬)</b> — Mino-Android 레포에서 <code>git pull</code> → <code>spec-gen</code>(+Figma URL)로 <code>spec.md</code>·이미지 생성, <code>spec-reviewer</code>로 자가검수`,
+        `<b>업로드 + 검증</b> — <code>+ 새 스펙 업로드</code>에 spec 붙여넣기·이미지 drag-drop·figmaSources 입력 → S1–S6 구조 검증 통과 시 <code>spec_draft</code> / <code>v0.1.0</code> 생성`,
+        `<b>컨펌 요청</b> — 상세에서 <code>컨펌 요청</code> → <code>spec_in_review</code> 전환 + spec이 read-only로 잠김`,
+        `<b>반려 반영 → 재요청</b> — 반려(<code>spec_changes_requested</code>) 시 <code>spec 수정</code>으로 코멘트 반영 후 <code>컨펌 요청</code>(버전 patch bump)`,
+        `<b>plan 작성</b> — 승인(<code>spec_approved</code>)되면 잠금 해제. <code>plan 붙여넣기</code>로 <code>plan.md</code> 저장 → <code>plan_drafted</code>`,
+        `<b>PR 생성</b> — <code>plan_drafted</code>에서 <code>PR 생성</code> → <code>docs/spec-{slug}-{version}</code> 브랜치·커밋·PR 자동 생성(base <code>develop</code>) → <code>pr_open</code>`,
+        `<b>무효화</b> — 승인 이후 <code>spec 수정</code> 시 자동으로 <code>spec_draft</code> 복귀 + planStale + 열린 PR close + 버전 bump(승인후=minor·머지후=major)`,
+      ],
+      note: `상세 패널의 <b>변경 이력(자동)</b>에서 버전별 사유를 확인·편집하고, 재검토 시 "지난 검토 이후 변경분" diff를 열 수 있습니다.`,
+    },
+    designer: {
+      intro: `디자이너는 <b>spec 컨펌 게이트</b>를 담당합니다. 검토 중인 스펙을 화면 단위로 확인하고 <b>승인 / 반려</b>로 파이프라인을 통과시킵니다.
+        plan·PR에는 관여하지 않습니다(문서 생성 스킬도 사용하지 않습니다).`,
+      steps: [
+        `<b>검토 대기 확인</b> — 좌측 <code>검토중</code> 필터 또는 상단 KPI <b>검토중</b>으로 <code>spec_in_review</code>만 추려 대상 Feature 선택`,
+        `<b>스펙 검토</b> — 상세의 <code>📝 스펙 검토</code>로 리뷰 모드 열기. <b>출처(Figma) 링크</b>로 원본과 대조하고, 제목 옆 <b>💬</b>로 화면·규칙에 인라인 코멘트`,
+        `<b>승인</b> — <code>spec_approved</code>로 전환, 개발자의 plan 잠금 해제`,
+        `<b>반려</b> — <code>spec_changes_requested</code>로 전환. <b>코멘트가 1개 이상</b> 있어야 반려 가능(무엇을 고칠지 없이 반려 불가)`,
+        `<b>보충 코멘트</b> — 이미 반려된 스펙에 상태 변경 없이 코멘트만 더할 때 <code>💬 코멘트 추가</code> 사용`,
+      ],
+      note: `검토 중(<code>spec_in_review</code>)에는 개발자가 spec을 수정할 수 없습니다. 개발자가 승인 이후 spec을 수정하면 자동 무효화되어 다시 검토 대기로 돌아올 수 있습니다.`,
+    },
+  };
+
+  function renderRoleGuide(role) {
+    const g = ROLE_GUIDE[role] || ROLE_GUIDE.developer;
+    document.querySelectorAll('#roleguide-tabs .role-tab').forEach((t) =>
+      t.classList.toggle('active', t.dataset.role === role));
+    const steps = g.steps.map((s) => `<li>${s}</li>`).join('');
+    $('#roleguide-body').innerHTML = `
+      <p class="desc">${g.intro}</p>
+      <ol class="skill-steps">${steps}</ol>
+      <div class="legend-note">${g.note}</div>`;
   }
 
   // ===================== Filtering =====================

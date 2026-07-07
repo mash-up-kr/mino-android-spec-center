@@ -256,6 +256,17 @@ table.feature-table { width: 100%; border-collapse: collapse; }
 }
 .legend-note b { color: var(--text); }
 
+/* 역할별 사용법 탭 */
+.role-tabs { display: flex; gap: 6px; margin-left: auto; margin-right: 12px; }
+.role-tab {
+  background: var(--bg); border: 1px solid var(--border); border-radius: 999px;
+  padding: 5px 12px; font-size: 12px; font-weight: 600; color: var(--muted); cursor: pointer;
+}
+.role-tab:hover { color: var(--text); }
+.role-tab.active { background: var(--blue-bg); border-color: var(--blue); color: var(--blue); }
+#roleguide-body .skill-steps { line-height: 2.0; }
+#roleguide-body .skill-steps li { margin-bottom: 4px; }
+
 .modal-card.modal-wide { width: 720px; }
 .modal-card.modal-xwide { width: 1040px; }
 #spec-modal-body { padding: 22px 26px; }

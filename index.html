@@ -4,7 +4,7 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>MASC · Mino Android Spec Center</title>
-  <link rel="stylesheet" href="styles.css?v=11" />
+  <link rel="stylesheet" href="styles.css?v=12" />
 </head>
 <body>
   <!-- 부팅 에러를 빈 화면 대신 표면화 -->
@@ -42,6 +42,7 @@
           <span id="meta-line">Team-MINO-Android</span>
         </div>
         <div class="spacer"></div>
+        <button class="btn-ghost" id="btn-roleguide">역할별 사용법</button>
         <button class="btn-ghost" id="btn-skill">스킬 안내</button>
         <button class="btn-ghost" id="btn-legend">상태 안내</button>
         <button class="btn-ghost" id="btn-reset">필터 초기화</button>
@@ -93,6 +94,21 @@
           <button class="modal-close" data-close="legend-modal" aria-label="닫기">×</button>
         </div>
         <div class="modal-body" id="legend-body"></div>
+      </div>
+    </div>
+
+    <!-- 역할별 사용법 모달 -->
+    <div id="roleguide-modal" class="modal-overlay hidden">
+      <div class="modal-card modal-wide">
+        <div class="modal-head">
+          <h2>역할별 대시보드 사용법</h2>
+          <div class="role-tabs" id="roleguide-tabs">
+            <button class="role-tab" data-role="developer">🧑‍💻 개발자</button>
+            <button class="role-tab" data-role="designer">🎨 디자이너</button>
+          </div>
+          <button class="modal-close" data-close="roleguide-modal" aria-label="닫기">×</button>
+        </div>
+        <div class="modal-body" id="roleguide-body"></div>
       </div>
     </div>
 
@@ -234,6 +250,6 @@
   <script src="js/version.js?v=3"></script>
   <script src="js/store-firebase.js?v=16"></script>
   <script src="js/store.js?v=14"></script>
-  <script src="js/app.js?v=18"></script>
+  <script src="js/app.js?v=19"></script>
 </body>
 </html>
