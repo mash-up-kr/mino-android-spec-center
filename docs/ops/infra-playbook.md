@@ -114,4 +114,4 @@ docs/specs/** @<리뷰 담당 핸들>
 - [x] B-2: firebase-config.js 채움 · secrets 등록 · rules/functions 배포
 - [x] C: Webhook URL 역기입 + PR 라운드트립 확인 — 역기입·HMAC + **PR 라운드트립 e2e 완료**(PR #55: pr_open→pr_closed). merged 경로만 실 머지 미검증
 - [x] D: CODEOWNERS (`docs/specs/** @JaesungLeee @simeunseok @KateteDeveloper`) — PR #54 머지 완료
-- [ ] E: 사용자 토큰 Secret Manager — 코드 완료, IAM 부여·배포·잔여 평문 정리 남음
+- [x] E: 사용자 토큰 Secret Manager — IAM·배포·재로그인 검증 완료(2026-07-08, `storeGithubToken` 실호출 성공·평문 필드 미재생성). 잔여 평문은 lazy migration(다음 PR 생성 시) 또는 콘솔 수동 삭제로 소진

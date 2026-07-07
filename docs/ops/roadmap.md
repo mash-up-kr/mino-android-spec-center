@@ -109,7 +109,7 @@
 - [x] 재검토 diff — "지난 검토 이후 변경분" 표시 (4.5) — **방식 B: 버전별 스냅샷 + 변경분 뷰**
 - [x] revoke UI / 403 권한부족 우아한 폴백 (5.1)
 - [x] 라이브 마크다운 프리뷰 (업로드 편집기, 이미지 렌더)
-- [~] 토큰 평문 → Secret Manager 마이그레이션 (5.1 운영 전환) — **코드 완료**(functions/token-store.js: `storeGithubToken` callable + 레거시 자동 이관, rules 평문 재유입 차단). 잔여=(ops) IAM 부여·배포·잔여 평문 정리 ([infra-playbook E](infra-playbook.md))
+- [x] 토큰 평문 → Secret Manager 마이그레이션 (5.1 운영 전환) — **완료(2026-07-08 검증)**: functions/token-store.js(`storeGithubToken` callable + 레거시 자동 이관) + rules 평문 재유입 차단 + IAM/배포. 재로그인 실호출 성공·필드 미재생성 확인. 미로그인 팀원의 잔여 평문 필드는 다음 PR 생성 시 자동 이관(또는 콘솔 수동 삭제) ([infra-playbook E](infra-playbook.md))
 - [ ] merged 경로 실 머지 e2e (더미 PR develop 머지)
 - [ ] `reviews` 배열 → 서브컬렉션 전환 (선택) — **P5.1(아래)로 편입**
 
