@@ -213,8 +213,21 @@ function bumpVersion(current, level) {
   if (level === 'graduate') return a[0] === 0 ? 'v1.0.0' : `v${a[0]}.${a[1]}.${a[2]}`;
   return `v${a[0]}.${a[1]}.${a[2]}`;
 }
-function versionLogEntry(version, event) {
-  return { version, level: event, reason: VER_REASONS[event] || '', at: new Date().toISOString().slice(0, 10) };
+function versionLogEntry(version, event, body) {
+  return {
+    version, level: event, reason: VER_REASONS[event] || '',
+    at: new Date().toISOString().slice(0, 10), body: body == null ? '' : body,
+  };
+}
+// 본문에서 `## 변경 이력` 섹션 제거 — js/version.js stripHistory 미러(스냅샷용)
+function stripHistory(body) {
+  const lines = String(body || '').replace(/\r\n/g, '\n').split('\n');
+  const isHist = (l) => /^##\s+(?:\d+\.\s*)?변경\s*이력\s*$/.test(l);
+  const start = lines.findIndex(isHist);
+  if (start < 0) return String(body || '').trim();
+  let end = lines.length;
+  for (let i = start + 1; i < lines.length; i++) { if (/^##\s+/.test(lines[i])) { end = i; break; } }
+  return lines.slice(0, start).concat(lines.slice(end)).join('\n').replace(/\n{3,}/g, '\n\n').trim();
 }
 
 // versionLog → 마크다운 `## 변경 이력` 표(버전=1열, 최신=마지막 행: spec-parse 규약).
@@ -287,7 +300,7 @@ exports.githubWebhook = onRequest(
       const nv = bumpVersion(fdata.specVersion, 'graduate');
       if (nv !== fdata.specVersion) {
         patch.specVersion = nv;
-        const resultLog = (Array.isArray(fdata.versionLog) ? fdata.versionLog : []).concat(versionLogEntry(nv, 'graduate'));
+        const resultLog = (Array.isArray(fdata.versionLog) ? fdata.versionLog : []).concat(versionLogEntry(nv, 'graduate', stripHistory(fdata.specBody)));
         patch.versionLog = resultLog;
         patch.specBody = injectVersionHistory(fdata.specBody, resultLog);
       }

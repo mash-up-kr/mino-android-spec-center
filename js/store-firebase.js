@@ -229,7 +229,7 @@
       if (!existing) {
         // 버전은 대시보드 소유 — 항상 v0.1.0 시작(0.x→머지 시 1.0.0 승격).
         const initVer = VER.INIT;
-        const initLog = [VER.logEntry(initVer, 'init', today())];
+        const initLog = [VER.logEntry(initVer, 'init', today(), VER.stripHistory(input.specBody))];
         await ref.set({
           slug: m.slug, title: m.title || id, status: 'spec_draft', planStale: false,
           specVersion: initVer, figmaSources: input.figmaSources || [],
@@ -254,7 +254,7 @@
       if (wasCommitted) {
         const level = VER.invalidationLevel(existing.status); // minor|major
         patch.specVersion = VER.bump(existing.specVersion, level);
-        resultLog = resultLog.concat(VER.logEntry(patch.specVersion, level, today()));
+        resultLog = resultLog.concat(VER.logEntry(patch.specVersion, level, today(), VER.stripHistory(input.specBody)));
         patch.versionLog = resultLog;
         patch.status = 'spec_draft'; patch.planStale = true; invalidated = true;
         if (existing.status === 'pr_open' && existing.prNumber) {
@@ -297,7 +297,7 @@
       // 반려 후 재제출 = PATCH bump. 최초 검토요청은 bump 없음.
       if (f.status === 'spec_changes_requested') {
         patch.specVersion = VER.bump(f.specVersion, 'patch');
-        const resultLog = (f.versionLog || []).concat(VER.logEntry(patch.specVersion, 'patch', today()));
+        const resultLog = (f.versionLog || []).concat(VER.logEntry(patch.specVersion, 'patch', today(), VER.stripHistory(f.specBody)));
         patch.versionLog = resultLog;
         patch.specBody = VER.injectVersionHistory(f.specBody, resultLog);
       }
@@ -365,7 +365,7 @@
         const nv = VER.bump(f.specVersion, 'graduate');
         if (nv !== f.specVersion) {
           patch.specVersion = nv;
-          const resultLog = (f.versionLog || []).concat(VER.logEntry(nv, 'graduate', today()));
+          const resultLog = (f.versionLog || []).concat(VER.logEntry(nv, 'graduate', today(), VER.stripHistory(f.specBody)));
           patch.versionLog = resultLog;
           patch.specBody = VER.injectVersionHistory(f.specBody, resultLog);
         }

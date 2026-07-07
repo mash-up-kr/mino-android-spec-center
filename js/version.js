@@ -41,8 +41,42 @@
   };
   const reason = (event) => REASONS[event] || '';
 
-  // 변경이력 로그 항목 { version, level, reason, at }
-  const logEntry = (version, event, at) => ({ version, level: event, reason: reason(event), at });
+  // 변경이력 로그 항목 { version, level, reason, at, body? }
+  // body = 그 버전 시점의 스펙 스냅샷(변경이력 표 제거한 content-only) — 재검토 diff 용
+  const logEntry = (version, event, at, body) =>
+    ({ version, level: event, reason: reason(event), at, body: body == null ? '' : body });
+
+  // 본문에서 `## 변경 이력` 섹션 제거(diff 노이즈·스냅샷 크기 절감). injectVersionHistory 의 역.
+  function stripHistory(body) {
+    const lines = String(body || '').replace(/\r\n/g, '\n').split('\n');
+    const isHist = (l) => /^##\s+(?:\d+\.\s*)?변경\s*이력\s*$/.test(l);
+    const start = lines.findIndex(isHist);
+    if (start < 0) return String(body || '').trim();
+    let end = lines.length;
+    for (let i = start + 1; i < lines.length; i++) { if (/^##\s+/.test(lines[i])) { end = i; break; } }
+    return lines.slice(0, start).concat(lines.slice(end)).join('\n').replace(/\n{3,}/g, '\n\n').trim();
+  }
+
+  // 줄 단위 LCS diff → [{ t:'=' | '-' | '+', text }]
+  function diffLines(a, b) {
+    const A = String(a || '').split('\n'), B = String(b || '').split('\n');
+    const n = A.length, m = B.length;
+    const dp = Array.from({ length: n + 1 }, () => new Array(m + 1).fill(0));
+    for (let i = n - 1; i >= 0; i--) {
+      for (let j = m - 1; j >= 0; j--) {
+        dp[i][j] = A[i] === B[j] ? dp[i + 1][j + 1] + 1 : Math.max(dp[i + 1][j], dp[i][j + 1]);
+      }
+    }
+    const out = []; let i = 0, j = 0;
+    while (i < n && j < m) {
+      if (A[i] === B[j]) { out.push({ t: '=', text: A[i] }); i++; j++; }
+      else if (dp[i + 1][j] >= dp[i][j + 1]) { out.push({ t: '-', text: A[i] }); i++; }
+      else { out.push({ t: '+', text: B[j] }); j++; }
+    }
+    while (i < n) { out.push({ t: '-', text: A[i] }); i++; }
+    while (j < m) { out.push({ t: '+', text: B[j] }); j++; }
+    return out;
+  }
 
   // versionLog → 마크다운 `## 변경 이력` 표(버전=1열, 최신=마지막 행: spec-parse 규약).
   // functions/index.js 의 buildHistoryTable/injectVersionHistory 와 동일 로직(미러).
@@ -70,5 +104,8 @@
     return out;
   }
 
-  window.MASCVersion = { INIT, parse, bump, invalidationLevel, reason, logEntry, injectVersionHistory };
+  window.MASCVersion = {
+    INIT, parse, bump, invalidationLevel, reason, logEntry, injectVersionHistory,
+    stripHistory, diffLines,
+  };
 })();

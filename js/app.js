@@ -6,6 +6,7 @@
 (function () {
   const { auth, features } = window.MASC;
   const V = window.MASCValidate;
+  const V2 = window.MASCVersion;
   const FB = window.MASC.BACKEND === 'firebase';
 
   // ---------- 상태 라벨/색상/설명 ----------
@@ -329,6 +330,16 @@
     bodyEl.innerHTML = (body && body.trim()) ? mdToHtml(body) : '<div class="feat-sub">본문 없음.</div>';
     resolveAssetImgs(bodyEl, f);
 
+    // 재검토: 직전 버전 대비 변경분 바로가기 (디자이너 리뷰 모드 · 버전 2개 이상)
+    const vlog = f.versionLog || [];
+    if (reviewMode && kind === 'spec' && vlog.length >= 2) {
+      const prev = vlog[vlog.length - 2], cur = vlog[vlog.length - 1];
+      bodyEl.insertAdjacentHTML('afterbegin',
+        `<div class="rereview-banner">🔍 지난 검토(${esc(prev.version)}) 이후 변경분이 있습니다.
+         <button class="btn-ghost" id="rereview-diff">변경분 보기</button></div>`);
+      $('#rereview-diff').addEventListener('click', () => openDiff(f, prev.version, cur.version));
+    }
+
     const foot = $('#doc-foot'), hint = $('#doc-review-hint');
     if (reviewMode) {
       reviewState = { featureId: f.featureId, comments: [], mode: decisionMode ? 'decision' : 'append' };
@@ -483,6 +494,9 @@
     // 변경이력 사유 편집(개발자)
     panel.querySelectorAll('button[data-edit-ver]').forEach((b) =>
       b.addEventListener('click', () => editVersionReason(f, b.dataset.editVer, b.dataset.reason)));
+    // 버전 변경분 diff
+    panel.querySelectorAll('button[data-diff-from]').forEach((b) =>
+      b.addEventListener('click', () => openDiff(f, b.dataset.diffFrom, b.dataset.diffTo)));
     // 액션 와이어링
     wireActions(panel, f);
   }
@@ -578,18 +592,66 @@
     // 자동 버저닝 이전 스펙: 로그가 없으면 현재 버전을 표시 전용 한 줄로 폴백(편집 불가).
     const legacy = !log.length;
     if (legacy) log = [{ version: f.specVersion || 'v0.1.0', level: 'legacy', at: '', reason: '자동 이력 도입 이전 스펙' }];
-    const items = log.slice().reverse().map((e) => {
+    const items = log.map((e, idx) => ({ e, idx })).reverse().map(({ e, idx }) => {
       const tag = VER_TAG[e.level] || badge(e.level === 'legacy' ? '현재' : e.level, 'gray');
       const editBtn = (isDev && !legacy)
         ? `<button class="ver-edit" data-edit-ver="${esc(e.version)}" data-reason="${esc(e.reason || '')}" title="사유 편집">✏️</button>`
         : '';
+      // 직전 버전과의 변경분 (첫 버전 제외)
+      const prev = idx > 0 ? log[idx - 1] : null;
+      const diffBtn = (!legacy && prev)
+        ? `<button class="ver-diff" data-diff-from="${esc(prev.version)}" data-diff-to="${esc(e.version)}">변경분</button>`
+        : '';
       return `<div class="ver-item">
         <span class="ver-num mono">${esc(e.version)}</span> ${tag}
-        <span class="feat-sub">${esc(e.at || '')}</span>${editBtn}
+        <span class="feat-sub">${esc(e.at || '')}</span>${editBtn}${diffBtn}
         <div class="ver-reason">${esc(e.reason || '')}</div>
       </div>`;
     }).join('');
     return `<div class="detail-section"><h3>변경 이력 <span class="feat-sub">(자동)</span></h3>${items}</div>`;
+  }
+
+  // ── 버전 간 diff (재검토 변경분) ──
+  function diffLineHtml(r) {
+    const cls = r.t === '+' ? 'add' : r.t === '-' ? 'del' : 'same';
+    const sign = r.t === '+' ? '+' : r.t === '-' ? '−' : ' ';
+    return `<div class="diff-line ${cls}"><span class="diff-sign">${sign}</span><span>${esc(r.text) || ' '}</span></div>`;
+  }
+  function diffBodyHtml(rows) {
+    const out = []; let i = 0;
+    while (i < rows.length) {
+      if (rows[i].t === '=') {
+        let j = i; while (j < rows.length && rows[j].t === '=') j++;
+        const run = rows.slice(i, j);
+        if (run.length > 6) {
+          run.slice(0, 2).forEach((r) => out.push(diffLineHtml(r)));
+          out.push(`<div class="diff-gap">⋯ ${run.length - 4}줄 동일 ⋯</div>`);
+          run.slice(-2).forEach((r) => out.push(diffLineHtml(r)));
+        } else run.forEach((r) => out.push(diffLineHtml(r)));
+        i = j;
+      } else { out.push(diffLineHtml(rows[i])); i++; }
+    }
+    return out.join('');
+  }
+  function openDiff(f, fromVer, toVer) {
+    const log = f.versionLog || [];
+    const from = log.find((e) => e.version === fromVer);
+    const to = log.find((e) => e.version === toVer);
+    $('#diff-modal-title').textContent = `변경분 · ${fromVer} → ${toVer}`;
+    const el = $('#diff-modal-body');
+    if (!from || !to) {
+      el.innerHTML = '<div class="feat-sub">버전을 찾을 수 없습니다.</div>';
+    } else if (!from.body && !to.body) {
+      el.innerHTML = '<div class="feat-sub">이 버전들에는 스냅샷이 없습니다(자동 버저닝 이전 생성). 이후 버전부터 변경분을 볼 수 있습니다.</div>';
+    } else {
+      const rows = V2.diffLines(from.body || '', to.body || '');
+      const changed = rows.some((r) => r.t !== '=');
+      el.innerHTML = changed
+        ? `<div class="diff-legend"><span class="del">− ${esc(fromVer)}</span> <span class="add">+ ${esc(toVer)}</span></div>`
+          + `<div class="diff-view">${diffBodyHtml(rows)}</div>`
+        : '<div class="feat-sub">두 버전의 본문이 동일합니다(변경 이력 표 제외).</div>';
+    }
+    openModal('diff-modal');
   }
 
   async function editVersionReason(f, version, current) {

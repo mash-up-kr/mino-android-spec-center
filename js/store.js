@@ -91,7 +91,7 @@
       if (i < 0) {
         // 신규 생성 → spec_draft. 버전은 대시보드 소유 — 항상 v0.1.0 시작(0.x→머지 시 1.0.0 승격).
         const initVer = VER.INIT;
-        const initLog = [VER.logEntry(initVer, 'init', today())];
+        const initLog = [VER.logEntry(initVer, 'init', today(), VER.stripHistory(input.specBody))];
         const f = Object.assign(this.blank(), {
           featureId: id, slug: m.slug, title: m.title || id,
           specVersion: initVer, specBody: VER.injectVersionHistory(input.specBody, initLog),
@@ -118,7 +118,7 @@
         // 무효화: 버전 bump(minor/major) + spec_draft 복귀 + planStale + 열린 PR 자동 close
         const level = VER.invalidationLevel(f.status);
         f.specVersion = VER.bump(f.specVersion, level);
-        f.versionLog = (f.versionLog || []).concat(VER.logEntry(f.specVersion, level, today()));
+        f.versionLog = (f.versionLog || []).concat(VER.logEntry(f.specVersion, level, today(), VER.stripHistory(input.specBody)));
         f.status = 'spec_draft';
         f.planStale = true;
         if (f.prNumber) {
@@ -164,7 +164,7 @@
       // 반려 후 재제출 = PATCH bump (승인 전 반복 라운드). 최초 검토요청은 bump 없음.
       if (f.status === 'spec_changes_requested') {
         f.specVersion = VER.bump(f.specVersion, 'patch');
-        f.versionLog = (f.versionLog || []).concat(VER.logEntry(f.specVersion, 'patch', today()));
+        f.versionLog = (f.versionLog || []).concat(VER.logEntry(f.specVersion, 'patch', today(), VER.stripHistory(f.specBody)));
         f.specBody = VER.injectVersionHistory(f.specBody, f.versionLog);
       }
       f.status = 'spec_in_review'; f.updatedAt = today(); persist();
@@ -237,7 +237,7 @@
         const nv = VER.bump(f.specVersion, 'graduate');
         if (nv !== f.specVersion) {
           f.specVersion = nv;
-          f.versionLog = (f.versionLog || []).concat(VER.logEntry(nv, 'graduate', today()));
+          f.versionLog = (f.versionLog || []).concat(VER.logEntry(nv, 'graduate', today(), VER.stripHistory(f.specBody)));
           f.specBody = VER.injectVersionHistory(f.specBody, f.versionLog);
         }
       }

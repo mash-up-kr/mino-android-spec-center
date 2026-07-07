@@ -450,6 +450,32 @@ table.feature-table { width: 100%; border-collapse: collapse; }
 .ver-reason { flex-basis: 100%; font-size: 13px; color: var(--text); margin-top: 2px; }
 .ver-edit { background: none; border: none; cursor: pointer; padding: 0 2px; font-size: 12px; opacity: .6; }
 .ver-edit:hover { opacity: 1; }
+.ver-diff { background: none; border: 1px solid var(--border); border-radius: 6px; cursor: pointer;
+  padding: 1px 8px; font-size: 11px; color: var(--muted); }
+.ver-diff:hover { border-color: var(--accent); color: var(--accent); }
+
+/* 재검토 변경분 배너 (리뷰 모달 상단) */
+.rereview-banner {
+  display: flex; align-items: center; gap: 10px; margin: 0 0 14px; padding: 10px 14px;
+  border: 1px solid var(--amber); background: var(--amber-bg); color: var(--amber);
+  border-radius: 10px; font-size: 13px; font-weight: 600;
+}
+.rereview-banner button { margin-left: auto; }
+
+/* 버전 diff 뷰 */
+.diff-legend { display: flex; gap: 14px; margin-bottom: 10px; font-size: 12px; font-weight: 600; }
+.diff-legend .del { color: var(--red); }
+.diff-legend .add { color: var(--green); }
+.diff-view {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 12.5px; line-height: 1.6;
+  border: 1px solid var(--border); border-radius: 10px; overflow: auto; max-height: 66vh;
+}
+.diff-line { display: flex; gap: 8px; padding: 0 12px; white-space: pre-wrap; word-break: break-word; }
+.diff-line .diff-sign { flex: 0 0 12px; text-align: center; opacity: .7; user-select: none; }
+.diff-line.same { color: var(--muted); }
+.diff-line.add { background: var(--green-bg); color: var(--green); }
+.diff-line.del { background: var(--red-bg); color: var(--red); }
+.diff-gap { padding: 3px 12px; color: var(--muted); font-size: 11px; text-align: center; background: var(--gray-bg); }
 
 /* Skill guide */
 .skill-steps { margin: 6px 0; padding-left: 20px; line-height: 1.9; }

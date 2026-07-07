@@ -4,7 +4,7 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>MASC · Mino Android Spec Center</title>
-  <link rel="stylesheet" href="styles.css?v=9" />
+  <link rel="stylesheet" href="styles.css?v=10" />
 </head>
 <body>
   <!-- 부팅 에러를 빈 화면 대신 표면화 -->
@@ -160,6 +160,17 @@
         </div>
       </div>
     </div>
+
+    <!-- 버전 diff 모달 (재검토 변경분 · 버전 비교) -->
+    <div id="diff-modal" class="modal-overlay hidden">
+      <div class="modal-card modal-xwide">
+        <div class="modal-head">
+          <h2 id="diff-modal-title">변경분</h2>
+          <button class="modal-close" data-close="diff-modal" aria-label="닫기">×</button>
+        </div>
+        <div class="modal-body" id="diff-modal-body"></div>
+      </div>
+    </div>
   </div>
 
   <!-- 온보딩 (첫 로그인 역할 선택) — #app 밖에 둬서 app이 숨겨져도 표시됨 -->
@@ -196,9 +207,9 @@
   <script src="data/seed.js?v=4"></script>
   <script src="js/spec-parse.js?v=4"></script>
   <script src="js/validate.js?v=4"></script>
-  <script src="js/version.js?v=2"></script>
-  <script src="js/store-firebase.js?v=14"></script>
-  <script src="js/store.js?v=13"></script>
-  <script src="js/app.js?v=15"></script>
+  <script src="js/version.js?v=3"></script>
+  <script src="js/store-firebase.js?v=15"></script>
+  <script src="js/store.js?v=14"></script>
+  <script src="js/app.js?v=16"></script>
 </body>
 </html>
