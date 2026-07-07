@@ -1,9 +1,10 @@
 # 작업 체크리스트 (v2 전면 재설계)
 
-> 출처: [mino_spec.md](../../mino_prd/mino_spec.md) 8장 마일스톤
-> 설계: [state-machine.md](state-machine.md) · [data-model.md](data-model.md) · [validation.md](validation.md)
+> 출처: [PRD](../PRD.md) 8장 마일스톤
+> 설계: [state-machine.md](../design/state-machine.md) · [data-model.md](../design/data-model.md) · [validation.md](../design/validation.md)
 > 진행 원칙: 문서/설계 → 프론트 전면 재작성(mock-first) → Firebase/Functions 실연결.
 > M0–M4 = MVP (8개 상태 전부 도달·전이 완결).
+> **현황(2026-07-07): M0–M4 MVP 완료 + P3 보안규칙 강제 + 자동 버저닝 + Post-MVP UX 3건 완료.** 실 백엔드 1바퀴 검증(PR #55/#56/#57/#62).
 
 범례: `[ ]` 미착수 · `[~]` 진행중 · `[x]` 완료 · `(ops)` 코드 아닌 운영작업 · `(BE)` Cloud Functions
 
@@ -42,20 +43,20 @@
 - [x] Firebase 클라이언트 SDK(compat CDN) 로드 + 초기화
 - [x] `store-firebase.js` 어댑터 (onSnapshot 캐시로 sync 인터페이스 유지) · mock과 플래그 전환
 - [x] GitHub 로그인(팝업) + `users.role` 온보딩(역할 선택 모달)
-- [ ] (M3) 개발자 App authorize 토큰으로 PR — createPr는 Function 연결, 토큰 검증 남음
+- [x] ~~개발자 App authorize 토큰으로 PR~~ — **폐기**: 로그인 토큰이 이미 PR-capable(user-to-server). createPr는 로그인 토큰으로 직동작
 ### ops (7장 플레이북 — admin 직접 실행, docs/infra-playbook.md)
 - [x] (ops) A. GitHub App 등록 → App ID/Client ID/Secret/Webhook secret
 - [x] (ops) B-1. Firebase 프로젝트 + **Blaze** + Auth(GitHub)/Firestore/Storage + webConfig
 - [x] (ops) B-2. firebase-config.js 채움 · secrets 등록 · rules/functions 배포
-- [~] (ops) C. Webhook URL 역기입 + PR 라운드트립 확인 — **웹훅 URL 역기입·HMAC ping 204 확인 완료**, 전체 PR 라운드트립(pr_open→merged)은 M3(PR 생성 배선) 후 검증
-- [~] (ops) GitHub Pages ↔ Functions CORS — **Pages 활성화(main/root, mash-up-kr.github.io/mino-android-spec-center)**, CORS_ORIGIN 일치. 빌드 후 앱 로드·함수 호출 최종 확인 남음(+ Firebase Auth 승인 도메인에 `mash-up-kr.github.io` 추가 필요)
+- [x] (ops) C. Webhook URL 역기입 + PR 라운드트립 확인 — 역기입·HMAC 확인 + **PR 라운드트립 e2e 완료**(PR #55: pr_open→웹훅→pr_closed). merged 경로만 실 머지 미검증
+- [x] (ops) GitHub Pages ↔ Functions CORS — Pages 활성화(mash-up-kr.github.io/mino-android-spec-center) · CORS_ORIGIN 일치 · Auth 승인 도메인 등록. 앱 로드·함수 호출 e2e 확인(PR #55)
 
 > 범례 추가: `[m]` = mock(localStorage) 구현 완료, **실연결(Firebase/Functions) 남음**.
 
 ## M1 · spec 작성 루프
 - [x] 스킬 사용 안내 화면 (git pull → `spec-gen`/`spec-reviewer` 실행법, Figma URL 입력 안내)
 - [x] drag-drop 업로드 — spec.md + 이미지 파일 (파일명 수집)
-- [m] 이미지 → Firebase Storage 저장 + `assets[]` 기록 — **현재 파일명만, 실제 업로드 없음**
+- [x] 이미지 → Firebase Storage 실 업로드 + `assets[]` 기록 — 함수가 내려받아 PR에 base64 커밋 (**검증 PR #57**)
 - [x] figmaSources 입력 → 저장
 - [x] 경량 구조 검증 S1–S6 (validation.md) — 실패 시 인라인 에러·저장 차단
 - [x] `status = spec_draft` feature 생성
@@ -63,13 +64,13 @@
 
 ## M2 · 컨펌 게이트 — mock 완료
 - [x] 컨펌요청 전이 `spec_draft`/`spec_changes_requested` → `spec_in_review`
-- [m] `spec_in_review` 동안 spec read-only 잠금 — UI 가드만, **Firestore 규칙 강제 남음**
+- [x] `spec_in_review` 동안 spec read-only 잠금 — UI 가드 + **Firestore 규칙 강제(P3)**
 - [x] 디자이너 승인 → `spec_approved` (plan 잠금 해제)
 - [x] 디자이너 반려+코멘트 → `spec_changes_requested`
-- [m] `reviews/` 기록 (decision·comments·reviewer) — 현재 feature 내 배열, **서브컬렉션 전환 남음**
+- [x] `reviews` 기록 (decision·comments·reviewer) — feature 내 배열 필드(`arrayUnion`). 서브컬렉션 전환은 후속(선택)
 - [x] 섹션/화면 인라인 코멘트 (+ 반려 후 보충 코멘트)
 - [x] 출처 Figma 메타(figmaSources) 컨펌 화면 노출
-- [m] role 기반 액션 가드 — UI만, **Firestore 보안규칙 남음**
+- [x] role 기반 액션 가드 — UI + **Firestore 보안규칙 강제(P3): 역할별 전이 허용목록·필드 잠금**
 
 ## M3 · plan + PR 생성
 > **2026-07-04 발견**: Firebase Auth GitHub provider가 A(GitHub App) client로 설정돼 있어, **로그인 토큰이 이미 PR-capable**(스모크 테스트: `permissions.push=true`, `x-oauth-scopes` 비어있음 = App user-to-server 토큰). → **별도 `githubOAuthExchange`/authorize 온보딩 불필요**. createPr는 로그인 토큰으로 바로 동작. 남은 건 **e2e 검증 + assets 커밋**.
@@ -88,22 +89,29 @@
 
 ## M4 · 상태머신 완결
 - [x] (BE) `githubWebhook` — `pull_request` 수신 + HMAC 검증 — **e2e 검증 완료(PR #55 close → delivery 200)**
-- [~] merged → `merged` / 미머지 close → `pr_closed` — **close 경로 검증 완료**(PR #55 → `pr_closed`). merged 경로는 동일 코드분기지만 미검증(더미 PR을 develop에 머지 안 함)
+- [~] merged → `merged` / 미머지 close → `pr_closed` — **close 경로 검증 완료**(PR #55 → `pr_closed`). merged 경로 코드 완비(웹훅 `pr.merged` 분기 + `graduate` 승격 → v1.0.0)이나 실 머지 e2e는 미검증(더미 PR을 develop에 머지 안 함)
 - [x] 무효화 연쇄 — approved 후 spec 수정 시: `spec_draft` 복귀 + `planStale=true` (로직)
 - [x] 무효화 시 열린 PR 자동 close — **함수 `closeSpecPR`** (개발자 토큰, 코멘트+close, head 브랜치 검증). saveSpec이 Firestore `prNumber=null` 선갱신 후 호출 → close 웹훅 매칭 실패로 `spec_draft` 유지(레이스 방지). **e2e 검증 완료(2026-07-06, PR #62: close+무효화 코멘트, spec_draft 복귀, 레이스 방지 확인)**. UI: pr_open 상세에 'spec 수정' 버튼 추가(app.js)
 - [x] specVersion 증가(새 브랜치/PR) — 재PR 시 `createSpecPR`가 `docs/spec-{slug}-{새버전}` 브랜치 자동 생성(추가 코드 불필요)
 - [x] (ops) `Team-MINO-Android` CODEOWNERS `docs/specs/** @안드3인` — **PR #54 머지 완료**. (강제하려면 develop 브랜치 보호에 "Require review from Code Owners" 활성화 필요) ([mino_android.md] 소관)
 
 → **M0–M4 완료 = MVP.** 8개 상태 전부 도달·전이 완결.
-> **2026-07-04**: 실 백엔드로 파이프라인 1바퀴 완주 검증(PR #55). spec 업로드→반려→재검토→승인→plan→실 PR 생성(pr_open)→PR close→웹훅→pr_closed. M3 잔여=assets 커밋, M4 잔여=merged 경로 검증·무효화 실 close·specVersion 증가. 이후는 P3(보안 규칙 강제) 중심.
+> **2026-07-04**: 실 백엔드로 파이프라인 1바퀴 완주 검증(PR #55). spec 업로드→반려→재검토→승인→plan→실 PR 생성(pr_open)→PR close→웹훅→pr_closed.
+> **2026-07-06~07**: assets 실 커밋(PR #57)·무효화 자동 close(PR #62)·specVersion 자동 버저닝·**P3 보안규칙 강제** 완료. 잔여=merged 경로 실 머지 e2e, 토큰 Secret Manager 이관.
 
 ---
 
+## P3 · 보안 규칙 강제 — 완료 (2026-07-06)
+- [x] `firestore.rules` 실 강제: 역할별 전이 허용목록(`devTransitionOk`/`desTransitionOk`) · 필드 잠금(prNumber/prUrl) · `spec_in_review` read-only · 위조 차단(`pr_open`/`merged`/`pr_closed`는 Functions 전용)
+- [x] 자동 버저닝: 대시보드가 `versionLog` 소유 → 전이 이벤트에서 bump(init/patch/minor/major/graduate) → `## 변경 이력` 표 자동 주입(specBody·PR 커밋 미러)
+
 ## Post-MVP (happy path 밖 · UX/운영)
-- [ ] 재검토 diff — "지난 검토 이후 변경분" 표시 (4.5)
-- [ ] revoke UI / 403 권한부족 우아한 폴백 (5.1)
-- [ ] 라이브 마크다운 프리뷰 (이미지 렌더, 우선순위 ↑)
+- [x] 재검토 diff — "지난 검토 이후 변경분" 표시 (4.5) — **방식 B: 버전별 스냅샷 + 변경분 뷰**
+- [x] revoke UI / 403 권한부족 우아한 폴백 (5.1)
+- [x] 라이브 마크다운 프리뷰 (업로드 편집기, 이미지 렌더)
 - [ ] 토큰 평문 → Secret Manager 마이그레이션 (5.1 운영 전환)
+- [ ] merged 경로 실 머지 e2e (더미 PR develop 머지)
+- [ ] `reviews` 배열 → 서브컬렉션 전환 (선택)
 
 ## 의존 / 비고
 - 생성 스킬·검수 에이전트 정의는 **Mino-Android 레포 `.claude/` 소관** ([mino_android.md]) — 본 레포는 사용법 안내 + 산출물 업로드만.

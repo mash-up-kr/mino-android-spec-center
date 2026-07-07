@@ -2,7 +2,7 @@
  * MASC spec 파서 (v2)
  * ----------------------------------------------------------------------
  * 신 포맷 spec.md에서 메타만 추출한다. 본문은 데이터로 파싱하지 않는다
- * (구 items/frontmatter 모델 폐기 — docs/validation.md).
+ * (구 items/frontmatter 모델 폐기 — docs/design/validation.md).
  *   - slug:        첫 줄 <!-- feature: {slug} --> 주석
  *   - title:       H1 (# ...)
  *   - specVersion: "변경 이력" 표 최신(마지막) 데이터 행의 버전명 (예: v0.1.0)

@@ -6,7 +6,7 @@
  *  3) githubWebhook       — pull_request 수신(HMAC 검증) → Firestore status 역동기화
  *
  * 시크릿: GITHUB_CLIENT_ID / GITHUB_CLIENT_SECRET / GITHUB_WEBHOOK_SECRET
- *   firebase functions:secrets:set <NAME> 로 등록 (docs/infra-playbook.md B-2).
+ *   firebase functions:secrets:set <NAME> 로 등록 (docs/ops/infra-playbook.md B-2).
  * 대상 레포: mash-up-kr/Team-MINO-Android · base 브랜치: develop
  */
 const crypto = require('crypto');

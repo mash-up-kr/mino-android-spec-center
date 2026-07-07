@@ -1,7 +1,7 @@
 /**
  * MASC app (v2) — UI 렌더링 & 상호작용
  * 데이터는 전부 window.MASC(store.js)를 통해서만 접근.
- * 파이프라인 상태머신: docs/state-machine.md · 검증: docs/validation.md
+ * 파이프라인 상태머신: docs/design/state-machine.md · 검증: docs/design/validation.md
  */
 (function () {
   const { auth, features } = window.MASC;

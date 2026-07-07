@@ -1,5 +1,5 @@
 /**
- * MASC 붙여넣기 구조 검증 (v2) — docs/validation.md S1–S6
+ * MASC 붙여넣기 구조 검증 (v2) — docs/design/validation.md S1–S6
  * ----------------------------------------------------------------------
  * 대시보드 2차 방어선. 본문을 데이터로 파싱하지 않고 구조만 기계 검사한다.
  * validateSpec(body, assetNames?) → { ok, errors: [{code,msg}], meta }

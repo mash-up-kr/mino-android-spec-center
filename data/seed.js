@@ -1,6 +1,6 @@
 /**
  * MASC seed (v2) — mock 데이터.
- * Firebase 연결 전 store.js가 읽는 초기 데이터. 신 모델(docs/data-model.md) 기준.
+ * Firebase 연결 전 store.js가 읽는 초기 데이터. 신 모델(docs/design/data-model.md) 기준.
  * 실연결 시 이 파일은 제거되고 Firestore가 SoT가 된다.
  */
 (function () {

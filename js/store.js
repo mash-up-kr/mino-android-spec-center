@@ -4,7 +4,7 @@
  * UI(app.js)는 오직 이 계층을 통해서만 데이터에 접근한다.
  * mock-first: seed(window.MASC_SEED) + localStorage 오버레이.
  * 이후 이 파일의 auth/features 구현만 Firebase Auth/Firestore로 교체하면
- * app.js는 손대지 않는다 (docs/data-model.md · state-machine.md).
+ * app.js는 손대지 않는다 (docs/design/data-model.md · state-machine.md).
  */
 (function () {
   if (window.MASC) return; // Firebase 백엔드가 이미 설정됐으면 mock 비활성화

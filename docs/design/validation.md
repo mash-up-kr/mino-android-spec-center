@@ -1,7 +1,7 @@
 # 붙여넣기 구조 검증 (구현 명세)
 
-> 출처: [mino_spec.md](../../mino_prd/mino_spec.md) 4.2 · `mino_prd/skills/VALIDATION.md` S1–S6
-> 상태: 설계(미구현) · v2 전면 재설계 기준
+> 출처: [PRD](../PRD.md) 4.2 · `mino_prd/skills/VALIDATION.md` S1–S6
+> 상태: **구현 완료** ([js/validate.js](../../js/validate.js) `validateSpec`) · v2 재설계 기준
 > 위치: 대시보드 업로드 시 **2차 방어선**. 1차 자가검수는 로컬 `spec-reviewer`가 수행, 내용 품질은 컨펌 게이트가 흡수. 대시보드는 **기계적 구조 검증만** 한다.
 
 검증 기준은 `spec-reviewer` 검수 체크포인트(S1–S9)의 **A(자동) 항목과 동일**해야 한다. 아래 6개가 대시보드 구현 대상.
@@ -15,7 +15,7 @@
 | S3 | section 2 이미지 | `2. 화면 상태별 읽기` 블록에 `![](assets/*.png)` ≥ 1 | 하드 |
 | S4 | enum 유효성 | 5.x 표 `interactionType`(6종)·`확정`(3종) 컬럼 = 통제 어휘만, 빈 값 없음 | 하드 |
 | S5 | 이미지 정합 | 본문 참조 `assets/x.png` ↔ 업로드 파일 1:1 (깨진 링크 0) | 하드 |
-| S6 | 버전 파싱 | `변경 이력` 최신 행 버전명 = `v\d+\.\d+\.\d+`, 브랜치 suffix로 파싱 가능 | 하드 |
+| S6 | 버전 파싱 | `변경 이력` 최신 행에 `v\d+\.\d+\.\d+` 존재(구조 확인) | 하드 |
 
 > S7(ID 컨벤션)·S8(사실 기반)·S9(이미지 export)는 **H(사람 판단)** → 대시보드 자동 검증 대상 아님. `spec-reviewer` + 디자이너 컨펌이 담당.
 
@@ -47,7 +47,7 @@
 - `js/validate.js` 신설: `validateSpec(body, uploadedAssetNames) → { ok, errors: [{code, msg}] }`.
 - 검증 실패 시 항목별 메시지를 업로드 UI에 인라인 표시하고 저장/컨펌요청 버튼 비활성화.
 - S5는 업로드된 파일명 집합과 본문 `![](assets/...)` 참조 집합의 양방향 차집합으로 검출.
-- 버전(S6) 파싱 결과는 `features.specVersion`에 캐시 → PR 브랜치 `docs/spec-{slug}-v{n}`에 사용.
+- S6는 **구조 확인만** 한다: 이후 `specVersion`은 대시보드가 소유해 최초 업로드 시 `v0.1.0`으로 강제하고 전이 이벤트에서 bump한다(본문 파싱값을 authoritative로 쓰지 않음). 상세는 [state-machine.md](state-machine.md) §3.
 
 ## 검증 ↔ 자동화 추적성
 

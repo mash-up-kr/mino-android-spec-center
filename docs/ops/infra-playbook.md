@@ -1,6 +1,6 @@
 # 인프라 실등록 플레이북 (M0)
 
-> 출처: [mino_spec.md](../../mino_prd/mino_spec.md) 7장 · 5.1
+> 출처: [PRD](../PRD.md) 7장 · 5.1
 > 의존 순서: **A(GitHub App 골격) → B(Firebase+Functions) → C(Webhook 역기입) → D(레포 CODEOWNERS)**
 > 산출물(시크릿)은 **절대 커밋 금지** — `js/firebase-config.js`(공개 web config는 OK) / Functions 환경변수에만 보관.
 
@@ -46,7 +46,7 @@ GitHub → Organization `mash-up-kr` → Settings → Developer settings → **G
 5. **Build → Storage → 생성**(같은 리전).
 6. 프로젝트 설정 → 일반 → **웹 앱 추가(</>)** → **firebaseConfig** 복사.
 
-→ **산출물**: `firebaseConfig`(apiKey 등, 공개 OK) → [js/firebase-config.js](../js/firebase-config.js)에 붙여넣고 `enabled: true`
+→ **산출물**: `firebaseConfig`(apiKey 등, 공개 OK) → [js/firebase-config.js](../../js/firebase-config.js)에 붙여넣고 `enabled: true`
 
 ### B-2. 레포 (이 디렉터리)
 ```bash
@@ -90,7 +90,7 @@ docs/specs/** @<리뷰 담당 핸들>
 - [x] A: GitHub App 등록 + 설치 → App ID/Client ID/Secret/Webhook secret 확보
 - [x] B-1: Firebase 프로젝트 + Blaze + Auth(GitHub)/Firestore/Storage + webConfig
 - [x] B-2: firebase-config.js 채움 · secrets 등록 · rules/functions 배포
-- [~] C: Webhook URL 역기입 + PR 라운드트립 확인 — 역기입·HMAC ping 204 확인 완료, 전체 PR 라운드트립은 M3 후
+- [x] C: Webhook URL 역기입 + PR 라운드트립 확인 — 역기입·HMAC + **PR 라운드트립 e2e 완료**(PR #55: pr_open→pr_closed). merged 경로만 실 머지 미검증
 - [x] D: CODEOWNERS (`docs/specs/** @JaesungLeee @simeunseok @KateteDeveloper`) — PR #54 머지 완료
 
-> 후순위(Post-MVP): 토큰 평문 → Secret Manager, revoke UI.
+> 후순위(Post-MVP): 토큰 평문 → Secret Manager(revoke UI/403 폴백은 완료).
