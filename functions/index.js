@@ -4,8 +4,9 @@
  *  1) githubOAuthExchange — OAuth code → user access token 교환
  *  2) createSpecPR        — 브랜치 생성 → spec/plan/assets 커밋 → PR 생성 (개발자 명의)
  *  3) githubWebhook       — pull_request 수신(HMAC 검증) → Firestore status 역동기화
+ *  4) notifyOnFeatureWrite — 상태 전이 → Discord 알림 (notify.js, P5.2)
  *
- * 시크릿: GITHUB_CLIENT_ID / GITHUB_CLIENT_SECRET / GITHUB_WEBHOOK_SECRET
+ * 시크릿: GITHUB_CLIENT_ID / GITHUB_CLIENT_SECRET / GITHUB_WEBHOOK_SECRET / DISCORD_WEBHOOK_URL
  *   firebase functions:secrets:set <NAME> 로 등록 (docs/ops/infra-playbook.md B-2).
  * 사용자 GitHub 토큰: Secret Manager `user-gh-token-{uid}` (token-store.js).
  *   Firestore 평문 저장 폐지 — 레거시 필드는 첫 사용 시 자동 이관.
@@ -23,6 +24,10 @@ const db = admin.firestore();
 // ===================== 0) 사용자 토큰 (Secret Manager, token-store.js) =====================
 const { getUserToken, storeGithubToken } = require('./token-store');
 exports.storeGithubToken = storeGithubToken;
+
+// ===================== 0b) 알림 P5.2 (notify.js) — 상태 전이 → Discord =====================
+const { notifyOnFeatureWrite } = require('./notify');
+exports.notifyOnFeatureWrite = notifyOnFeatureWrite;
 
 const GITHUB_CLIENT_ID = defineSecret('GITHUB_CLIENT_ID');
 const GITHUB_CLIENT_SECRET = defineSecret('GITHUB_CLIENT_SECRET');

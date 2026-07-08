@@ -108,6 +108,22 @@ docs/specs/** @<리뷰 담당 핸들>
 
 ---
 
+## F. Discord 알림 웹훅 (P5.2)
+
+> 코드: [functions/notify.js](../../functions/notify.js) — `features/{id}` 상태 전이를 감지해
+> Discord 공용 채널로 embed 알림. 설계: [v2/notifications.md](../v2/notifications/notifications.md)
+
+1. **(ops) Discord Incoming Webhook 생성**: 팀 Discord 서버 → 알림 받을 채널 → 채널 편집 → 연동 → 웹후크 → 새 웹후크 → **웹후크 URL 복사**
+2. **시크릿 등록** (커밋 금지):
+   ```bash
+   firebase functions:secrets:set DISCORD_WEBHOOK_URL
+   # 프롬프트에 복사한 URL 붙여넣기
+   ```
+3. **배포**: `firebase deploy --only functions`
+4. **검증**: 대시보드에서 아무 spec 하나 컨펌 요청(`→ spec_in_review`) → Discord 채널에 "🔍 리뷰 요청" embed 도착 + 제목 링크가 `?feature={id}` 로 해당 feature 열리는지 확인
+
+→ **산출물**: 상태 전이(컨펌요청·승인·반려·무효화·머지)가 Discord 로 자동 알림
+
 ## 체크 (완료 표시)
 - [x] A: GitHub App 등록 + 설치 → App ID/Client ID/Secret/Webhook secret 확보
 - [x] B-1: Firebase 프로젝트 + Blaze + Auth(GitHub)/Firestore/Storage + webConfig
@@ -115,3 +131,4 @@ docs/specs/** @<리뷰 담당 핸들>
 - [x] C: Webhook URL 역기입 + PR 라운드트립 확인 — 역기입·HMAC + **PR 라운드트립 e2e 완료**(PR #55: pr_open→pr_closed). merged 경로만 실 머지 미검증
 - [x] D: CODEOWNERS (`docs/specs/** @JaesungLeee @simeunseok @KateteDeveloper`) — PR #54 머지 완료
 - [x] E: 사용자 토큰 Secret Manager — IAM·배포·재로그인 검증 완료(2026-07-08, `storeGithubToken` 실호출 성공·평문 필드 미재생성). 잔여 평문은 lazy migration(다음 PR 생성 시) 또는 콘솔 수동 삭제로 소진
+- [x] F: Discord 알림 웹훅 — 코드·시크릿·배포·**실알림 검증 완료(2026-07-08)**. `notifyOnFeatureWrite`(asia-northeast3 — Firestore 리전 자동 매칭). 역할 실멘션(`<@&roleId>` content 필드) 포함. 최초 배포는 Eventarc 서비스 에이전트 권한 전파 대기로 1회 재시도 필요했음(전형적 — 수분 후 재배포가 정답)

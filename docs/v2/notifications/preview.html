@@ -1,0 +1,280 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>MASC Discord 알림 미리보기</title>
+<style>
+  :root {
+    --page-bg: #f4f3ef;
+    --page-fg: #2a2c31;
+    --page-muted: #6c6f78;
+    --page-line: #dedcd4;
+    --card-note-bg: #ebe9e2;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --page-bg: #1b1c1f;
+      --page-fg: #e4e4e2;
+      --page-muted: #9a9da6;
+      --page-line: #33353b;
+      --card-note-bg: #242629;
+    }
+  }
+  :root[data-theme="dark"] {
+    --page-bg: #1b1c1f;
+    --page-fg: #e4e4e2;
+    --page-muted: #9a9da6;
+    --page-line: #33353b;
+    --card-note-bg: #242629;
+  }
+  :root[data-theme="light"] {
+    --page-bg: #f4f3ef;
+    --page-fg: #2a2c31;
+    --page-muted: #6c6f78;
+    --page-line: #dedcd4;
+    --card-note-bg: #ebe9e2;
+  }
+
+  body {
+    background: var(--page-bg);
+    color: var(--page-fg);
+    font-family: -apple-system, BlinkMacSystemFont, "Apple SD Gothic Neo", "Noto Sans KR", "Malgun Gothic", "Segoe UI", sans-serif;
+    line-height: 1.55;
+    margin: 0;
+    padding: 48px 20px 80px;
+  }
+  .wrap { max-width: 720px; margin: 0 auto; }
+
+  header.intro { margin-bottom: 40px; }
+  header.intro h1 {
+    font-size: 1.45rem; font-weight: 700; letter-spacing: -0.01em;
+    margin: 0 0 8px; text-wrap: balance;
+  }
+  header.intro p { margin: 0; color: var(--page-muted); font-size: 0.92rem; max-width: 58ch; }
+
+  section.case { margin-bottom: 44px; }
+  .case-head { display: flex; align-items: baseline; gap: 10px; margin-bottom: 6px; }
+  .case-head .no {
+    font-size: 0.72rem; font-weight: 700; letter-spacing: 0.08em;
+    color: var(--page-muted); text-transform: uppercase;
+  }
+  .case-head h2 { font-size: 1.02rem; font-weight: 700; margin: 0; }
+  .case-note {
+    font-size: 0.85rem; color: var(--page-muted); margin: 0 0 14px;
+    max-width: 62ch;
+  }
+  .case-note code {
+    font-family: ui-monospace, "SF Mono", Menlo, monospace;
+    font-size: 0.78rem;
+    background: var(--card-note-bg);
+    border-radius: 4px; padding: 1px 5px;
+  }
+
+  /* ---------- Discord 채팅 패널 (항상 Discord 다크 — 스크린샷처럼) ---------- */
+  .discord {
+    background: #313338;
+    border-radius: 10px;
+    border: 1px solid var(--page-line);
+    padding: 18px 16px 20px;
+    color: #dbdee1;
+    font-size: 15px;
+    overflow-x: auto;
+  }
+  .msg { display: flex; gap: 14px; min-width: 480px; }
+  .avatar {
+    width: 40px; height: 40px; border-radius: 50%; flex: none;
+    background: #4753c5;
+    display: flex; align-items: center; justify-content: center;
+    color: #fff; font-weight: 700; font-size: 17px;
+    user-select: none;
+  }
+  .body { min-width: 0; flex: 1; }
+  .meta { display: flex; align-items: center; gap: 6px; margin-bottom: 2px; }
+  .uname { font-weight: 600; color: #f2f3f5; font-size: 15px; }
+  .bot-tag {
+    background: #5865f2; color: #fff;
+    font-size: 10px; font-weight: 600;
+    border-radius: 4px; padding: 1px 5px;
+    letter-spacing: 0.02em;
+  }
+  .ts { color: #949ba4; font-size: 12px; font-variant-numeric: tabular-nums; }
+
+  .content { margin: 0 0 4px; }
+  .mention {
+    background: rgba(88, 101, 242, 0.3);
+    color: #c9cdfb;
+    border-radius: 4px; padding: 0 3px;
+    font-weight: 500;
+    white-space: nowrap;
+  }
+  .mention.android { background: rgba(59, 165, 92, 0.25); color: #7ee0a2; }
+  .mention.design  { background: rgba(160, 109, 232, 0.25); color: #cfaef7; }
+
+  .embed {
+    background: #2b2d31;
+    border-left: 4px solid #f59e0b;
+    border-radius: 4px;
+    padding: 10px 14px 12px 12px;
+    margin-top: 4px;
+    max-width: 460px;
+  }
+  .embed .e-title {
+    font-weight: 600; font-size: 15px;
+    color: #00a8fc;
+    margin: 0 0 2px;
+    cursor: pointer;
+  }
+  .embed .e-title:hover { text-decoration: underline; }
+  .embed .e-desc { font-size: 14px; color: #dbdee1; white-space: pre-line; margin: 4px 0 0; }
+  .embed .e-fields {
+    display: flex; flex-wrap: wrap; gap: 8px 24px; margin-top: 10px;
+  }
+  .embed .e-field .fname {
+    font-size: 12px; font-weight: 700; color: #b5bac1; margin-bottom: 1px;
+  }
+  .embed .e-field .fval { font-size: 14px; color: #dbdee1; }
+  .embed .e-field .fval code {
+    font-family: ui-monospace, "SF Mono", Menlo, monospace;
+    font-size: 12.5px; background: #1e1f22; border-radius: 3px; padding: 1px 4px;
+  }
+
+  footer.remarks {
+    border-top: 1px solid var(--page-line);
+    padding-top: 20px; margin-top: 8px;
+    font-size: 0.85rem; color: var(--page-muted);
+  }
+  footer.remarks ul { margin: 8px 0 0; padding-left: 18px; }
+  footer.remarks li { margin-bottom: 4px; }
+</style>
+
+<div class="wrap">
+  <header class="intro">
+    <h1>MASC Discord 알림 — 상황별 메시지 미리보기</h1>
+    <p>웹훅 <b>MASC 알림</b>이 보내는 실제 payload를 그대로 재현했습니다.
+    역할 멘션은 embed 밖 본문(content)에 들어가 실제로 핑이 울리고,
+    제목을 클릭하면 대시보드의 해당 feature로 이동합니다.</p>
+  </header>
+
+  <!-- 1. 컨펌 요청 -->
+  <section class="case">
+    <div class="case-head"><span class="no">1</span><h2>컨펌 요청</h2></div>
+    <p class="case-note">개발자가 spec을 올리고 <b>컨펌 요청</b>을 누르면 — <code>spec_draft → spec_in_review</code>. 디자이너 역할이 핑됩니다.</p>
+    <div class="discord"><div class="msg">
+      <div class="avatar">M</div>
+      <div class="body">
+        <div class="meta"><span class="uname">MASC 알림</span><span class="bot-tag">앱</span><span class="ts">오늘 오후 2:47</span></div>
+        <p class="content"><span class="mention design">@[민호야잘하자] Design</span></p>
+        <div class="embed" style="border-left-color:#f59e0b">
+          <p class="e-title">🔍 리뷰 요청: 로그인 화면 v0.2.1</p>
+          <div class="e-fields">
+            <div class="e-field"><div class="fname">버전</div><div class="fval">v0.2.1</div></div>
+            <div class="e-field"><div class="fname">전이</div><div class="fval"><code>spec_draft → spec_in_review</code></div></div>
+            <div class="e-field"><div class="fname">작성자</div><div class="fval">재성</div></div>
+          </div>
+        </div>
+      </div>
+    </div></div>
+  </section>
+
+  <!-- 2. 승인 -->
+  <section class="case">
+    <div class="case-head"><span class="no">2</span><h2>승인</h2></div>
+    <p class="case-note">디자이너가 리뷰에서 <b>승인</b>하면 — <code>spec_in_review → spec_approved</code>. 개발자(Android) 역할이 핑됩니다.</p>
+    <div class="discord"><div class="msg">
+      <div class="avatar">M</div>
+      <div class="body">
+        <div class="meta"><span class="uname">MASC 알림</span><span class="bot-tag">앱</span><span class="ts">오늘 오후 3:12</span></div>
+        <p class="content"><span class="mention android">@[민호야잘하자] Android</span></p>
+        <div class="embed" style="border-left-color:#22c55e">
+          <p class="e-title">✅ 승인됨: 로그인 화면</p>
+          <div class="e-fields">
+            <div class="e-field"><div class="fname">버전</div><div class="fval">v0.2.1</div></div>
+            <div class="e-field"><div class="fname">전이</div><div class="fval"><code>spec_in_review → spec_approved</code></div></div>
+            <div class="e-field"><div class="fname">작성자</div><div class="fval">재성</div></div>
+          </div>
+        </div>
+      </div>
+    </div></div>
+  </section>
+
+  <!-- 3. 반려 -->
+  <section class="case">
+    <div class="case-head"><span class="no">3</span><h2>반려</h2></div>
+    <p class="case-note">디자이너가 코멘트와 함께 <b>반려</b>하면 — <code>spec_in_review → spec_changes_requested</code>. 코멘트 요약(최대 3건, 각 80자)이 함께 갑니다.</p>
+    <div class="discord"><div class="msg">
+      <div class="avatar">M</div>
+      <div class="body">
+        <div class="meta"><span class="uname">MASC 알림</span><span class="bot-tag">앱</span><span class="ts">오늘 오후 3:12</span></div>
+        <p class="content"><span class="mention android">@[민호야잘하자] Android</span></p>
+        <div class="embed" style="border-left-color:#ef4444">
+          <p class="e-title">🔁 반려: 로그인 화면</p>
+          <p class="e-desc">코멘트 4건
+• 소셜 로그인 버튼 순서가 시안과 다릅니다 (Google이 먼저)
+• 에러 스낵바 문구를 "네트워크 연결을 확인해주세요"로 통일해주세요
+• 로딩 인디케이터 색상이 primary 토큰이 아니에요
+…외 1건</p>
+          <div class="e-fields">
+            <div class="e-field"><div class="fname">버전</div><div class="fval">v0.2.1</div></div>
+            <div class="e-field"><div class="fname">전이</div><div class="fval"><code>spec_in_review → spec_changes_requested</code></div></div>
+            <div class="e-field"><div class="fname">작성자</div><div class="fval">재성</div></div>
+          </div>
+        </div>
+      </div>
+    </div></div>
+  </section>
+
+  <!-- 4. 무효화 -->
+  <section class="case">
+    <div class="case-head"><span class="no">4</span><h2>무효화 (드리프트)</h2></div>
+    <p class="case-note">승인·plan·PR·머지 이후 spec을 수정하면 — <code>spec_approved/plan_drafted/pr_open/merged → spec_draft</code>. 재컨펌이 필요하다는 신호입니다.</p>
+    <div class="discord"><div class="msg">
+      <div class="avatar">M</div>
+      <div class="body">
+        <div class="meta"><span class="uname">MASC 알림</span><span class="bot-tag">앱</span><span class="ts">오늘 오후 5:03</span></div>
+        <p class="content"><span class="mention android">@[민호야잘하자] Android</span></p>
+        <div class="embed" style="border-left-color:#f97316">
+          <p class="e-title">⚠️ 무효화: 로그인 화면 — 재작업 필요</p>
+          <div class="e-fields">
+            <div class="e-field"><div class="fname">버전</div><div class="fval">v2.0.0</div></div>
+            <div class="e-field"><div class="fname">전이</div><div class="fval"><code>merged → spec_draft</code></div></div>
+            <div class="e-field"><div class="fname">작성자</div><div class="fval">재성</div></div>
+          </div>
+        </div>
+      </div>
+    </div></div>
+  </section>
+
+  <!-- 5. 머지 -->
+  <section class="case">
+    <div class="case-head"><span class="no">5</span><h2>머지 (문서 확정)</h2></div>
+    <p class="case-note">GitHub에서 spec PR이 develop에 머지되면(웹훅 경유) — <code>pr_open → merged</code>. 최초 머지는 v1.0.0으로 승격되고, 두 역할 모두 핑됩니다.</p>
+    <div class="discord"><div class="msg">
+      <div class="avatar">M</div>
+      <div class="body">
+        <div class="meta"><span class="uname">MASC 알림</span><span class="bot-tag">앱</span><span class="ts">오늘 오후 6:40</span></div>
+        <p class="content"><span class="mention android">@[민호야잘하자] Android</span> <span class="mention design">@[민호야잘하자] Design</span></p>
+        <div class="embed" style="border-left-color:#8b5cf6">
+          <p class="e-title">🎉 문서 확정(merged): 로그인 화면 v1.0.0</p>
+          <div class="e-fields">
+            <div class="e-field"><div class="fname">버전</div><div class="fval">v1.0.0</div></div>
+            <div class="e-field"><div class="fname">전이</div><div class="fval"><code>pr_open → merged</code></div></div>
+            <div class="e-field"><div class="fname">작성자</div><div class="fval">재성</div></div>
+          </div>
+        </div>
+      </div>
+    </div></div>
+  </section>
+
+  <footer class="remarks">
+    알아둘 것
+    <ul>
+      <li>status가 바뀌지 않는 저장(본문 수정, plan 저장, 보충 코멘트, 사유 편집)과 <b>PR 생성 / PR 미머지 종료</b> 전이는 알림이 가지 않습니다.</li>
+      <li>멘션 색은 실제로는 서버 역할 색을 따릅니다 (Android 초록, Design 보라).</li>
+      <li>역할 설정에서 "누구나 이 역할을 @mention할 수 있음"이 꺼져 있으면 텍스트는 보이지만 핑이 울리지 않습니다.</li>
+      <li>작성자 필드는 Firestore <b>users</b>의 이름을 따르고, 조회 실패 시 필드만 빠진 채 발송됩니다.</li>
+    </ul>
+  </footer>
+</div>
+
+</html>

@@ -46,6 +46,8 @@
   };
 
   const state = { status: 'all', quick: new Set(), search: '', selectedId: null };
+  // Discord 알림 딥링크(?feature={id}, notifications.md §4) — 데이터 로드 후 1회 적용
+  let pendingDeepLink = new URLSearchParams(location.search).get('feature');
   const $ = (sel) => document.querySelector(sel);
   const esc = (s) => String(s == null ? '' : s).replace(/&/g, '&amp;').replace(/</g, '&lt;');
   const userName = (uid) => { const u = auth.userOf(uid); return u ? u.name : (uid || ''); };
@@ -261,7 +263,15 @@
   }
 
   // ===================== Render =====================
-  function renderAll() { renderKpis(); renderStatusList(); renderCenter(); renderDetail(); }
+  function renderAll() { applyDeepLink(); renderKpis(); renderStatusList(); renderCenter(); renderDetail(); }
+
+  // ?feature={id} 진입 — 해당 feature가 로드되어 있으면 선택하고 소비, 없으면 다음 렌더에서 재시도
+  function applyDeepLink() {
+    if (!pendingDeepLink) return;
+    if (!features.get(pendingDeepLink)) return;
+    state.selectedId = pendingDeepLink;
+    pendingDeepLink = null;
+  }
 
   function renderKpis() {
     const all = features.all();
