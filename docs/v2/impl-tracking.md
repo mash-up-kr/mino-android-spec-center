@@ -87,11 +87,11 @@ spec(slug) ──[대시보드가 이슈 생성]──→ 이슈 #N ──→ fe
 
 ## 6. 드리프트 — `implStale` (기존 machinery 재활용)
 
-`planStale`([js/app.js](../../js/app.js) `renderKpis`)과 동일한 개념을 구현 트랙에 적용한다.
+구 `planStale`(v3에서 plan 단계와 함께 제거됨)과 동일한 개념을 구현 트랙에 적용한다 — 상위 문서가 바뀌면 하위 산출물을 '오래됨'으로 표시하는 패턴.
 
 - 구현 이슈/PR 생성 시 `implSpecVersion = 현재 specVersion` 을 기록(대상 버전 고정).
 - 승인 후 spec 수정 → 무효화 연쇄([js/store-firebase.js](../../js/store-firebase.js) `saveSpec`의 bump)에서, `implSpecVersion < 현재 specVersion` 이면 `implStale = true`.
-- UI: `planStale` 빨간 뱃지 패턴 그대로 → "구현이 구버전(v1.2.0) 기준".
+- UI: 구 `planStale` 빨간 뱃지 패턴 그대로 → "구현이 구버전(1.2.0) 기준".
 
 ## 7. UI 표면
 
@@ -138,7 +138,7 @@ spec(slug) ──[대시보드가 이슈 생성]──→ 이슈 #N ──→ fe
 - **feature 목록 행에 구현 상태 뱃지** — 표에서 한눈에 (상태/버전/PR 컬럼 옆)
 - **KPI 확장** — `renderKpis`에 "구현 대기 / 구현중 / 구현완료"
 - **필터칩 확장** — "구현중" + **"내가 구현 담당"**(assignee=나 → 개발자의 "내 할 일" 뷰)
-- **정체 경고(aging)** — 문서 머지 후 *N일째 이슈 생성 안 됨* / *이슈만 있고 착수 안 됨* → `planStale` 빨간 뱃지 패턴 재사용
+- **정체 경고(aging)** — 문서 머지 후 *N일째 이슈 생성 안 됨* / *이슈만 있고 착수 안 됨* → 구 `planStale` 빨간 뱃지 패턴 재사용
 
 ## 8. 데이터 모델 (신규 필드)
 
@@ -176,7 +176,7 @@ feature 문서에 추가:
 
 ### P4.2 · 드리프트 + aging
 - [ ] `(BE/FE)` `implSpecVersion` 기록 + 무효화 연쇄에서 `implStale` 판정
-- [ ] `(FE)` `implStale` 뱃지 + 리드타임·정체 경고 (`planStale` 패턴 재사용)
+- [ ] `(FE)` `implStale` 뱃지 + 리드타임·정체 경고 (구 `planStale` 패턴 재사용)
 
 ### P4.3 · Tier 2 리치 정보 (선택 · GitHub API 온디맨드)
 - [ ] `(FE/BE)` 코드리뷰 상태(`/review` 결과) · CI 상태 · 변경 규모(+/−) · 브랜치 마지막 커밋 · 담당자 아바타

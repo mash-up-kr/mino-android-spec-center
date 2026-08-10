@@ -1,5 +1,5 @@
 /**
- * MASC Store — Firebase 백엔드 (v2)
+ * MASC Store — Firebase 백엔드 (v3)
  * ----------------------------------------------------------------------
  * window.MASC_FIREBASE.enabled === true 일 때만 활성화되어 window.MASC 를 설정한다.
  * mock(store.js)과 동일한 인터페이스를 노출하되:
@@ -7,6 +7,7 @@
  *   - 쓰기 메서드는 Promise 반환 (app.js 가 await)
  *   - auth.onAuthChange(cb) / features.subscribe(cb) 로 재렌더 구동
  * reviews 는 MVP 단계에서 feature 문서의 배열 필드로 보관(서브컬렉션 전환은 후속).
+ * plan 검토 단계·이미지(assets) 업로드는 폐기 — 화면 근거는 spec 본문의 Figma 링크.
  */
 (function () {
   if (!window.MASC_FIREBASE || !window.MASC_FIREBASE.enabled) return;
@@ -20,48 +21,25 @@
   const today = () => new Date().toISOString().slice(0, 10);
   const serverTs = () => firebase.firestore.FieldValue.serverTimestamp();
   const arrayUnion = (v) => firebase.firestore.FieldValue.arrayUnion(v);
-  const storage = firebase.storage();
-
-  // 새로 드롭된 File 은 Storage(features/{id}/assets/{name})에 올리고 storagePath 를 채운다.
-  // 이미 storagePath 가 있는 기존 asset 은 재업로드하지 않는다.
-  async function uploadAssets(id, list) {
-    const out = [];
-    for (const a of (list || [])) {
-      if (a.storagePath) { out.push({ name: a.name, storagePath: a.storagePath }); continue; }
-      if (a.file) {
-        const path = `features/${id}/assets/${a.name}`;
-        await storage.ref(path).put(a.file);
-        out.push({ name: a.name, storagePath: path });
-      } else {
-        out.push({ name: a.name, storagePath: '' }); // File 없이 이름만 — 폴백
-      }
-    }
-    return out;
-  }
-
-  // spec 본문의 `assets/{name}` 이미지 → Storage 다운로드 URL(토큰 포함) 해석.
-  // 결과를 storagePath 기준으로 캐시해 재열람 시 재요청하지 않는다.
-  const urlCache = new Map();
-  async function assetUrl(featureId, name) {
-    const path = `features/${featureId}/assets/${name}`;
-    if (urlCache.has(path)) return urlCache.get(path);
-    try {
-      const url = await storage.ref(path).getDownloadURL();
-      urlCache.set(path, url);
-      return url;
-    } catch (e) {
-      console.error('assetUrl', path, e && e.code);
-      return '';
-    }
-  }
 
   const ENUMS = {
     status: ['spec_draft', 'spec_in_review', 'spec_changes_requested', 'spec_approved',
-      'plan_drafted', 'pr_open', 'merged', 'pr_closed'],
+      'pr_open', 'merged', 'pr_closed'],
     role: ['developer', 'designer'],
-    interactionType: ['display_state', 'user_action', 'navigation', 'async_process', 'validation', 'modal_dialog'],
-    confirm: ['confirmed', 'partial', 'needs_policy'],
   };
+
+  // 무효화 대상 상태 (승인 이후 = 이미 커밋된 약속)
+  const COMMITTED = ['spec_approved', 'pr_open', 'merged'];
+
+  // 본문에서 뽑은 Figma 링크 + 수기 입력 병합 (중복 제거, 본문 우선)
+  function mergeFigma(fromBody, manual) {
+    const out = [];
+    (fromBody || []).concat(manual || []).forEach((u) => {
+      const v = String(u || '').trim();
+      if (v && out.indexOf(v) < 0) out.push(v);
+    });
+    return out;
+  }
 
   let cache = [];            // features 캐시
   let usersCache = [];       // users 캐시 (리뷰어 이름 표시용)
@@ -93,10 +71,11 @@
   function normalize(id, d) {
     return {
       featureId: id, slug: d.slug || id, title: d.title || id, status: d.status || 'spec_draft',
-      planStale: !!d.planStale, specVersion: d.specVersion || '', figmaSources: d.figmaSources || [],
+      specVersion: d.specVersion || '', specStatus: d.specStatus || '', prdVersion: d.prdVersion || '',
+      baseBranch: d.baseBranch || '', figmaSources: d.figmaSources || [],
       prNumber: d.prNumber || null, prUrl: d.prUrl || null,
-      specBody: d.specBody || '', planBody: d.planBody || null,
-      assets: d.assets || [], reviews: d.reviews || [], versionLog: d.versionLog || [],
+      specBody: d.specBody || '',
+      reviews: d.reviews || [], versionLog: d.versionLog || [],
       createdBy: d.createdBy || '',
     };
   }
@@ -220,55 +199,68 @@
     all() { return cache.map((f) => JSON.parse(JSON.stringify(f))); },
     get(id) { const f = findCache(id); return f ? JSON.parse(JSON.stringify(f)) : null; },
     subscribe(cb) { dataCbs.push(cb); },
-    assetUrl,
+
+    /** `/issue` 가 만든 `…/base` 브랜치 목록 (Functions → GitHub API) */
+    async listBaseBranches() {
+      try {
+        const res = await firebase.functions().httpsCallable('listBaseBranches')({});
+        return { ok: true, branches: (res.data && res.data.branches) || [] };
+      } catch (e) {
+        const msg = /GITHUB_AUTH:\s*/.test(e.message || '')
+          ? (e.message || '').replace(/^.*GITHUB_AUTH:\s*/, '') : (e.message || 'base 브랜치 조회 실패');
+        return { ok: false, error: msg, branches: [] };
+      }
+    },
 
     async saveSpec(input) {
       if (!auth.isDeveloper()) return { ok: false, error: 'spec 작성은 개발자만 가능합니다.' };
       const m = META.parseMeta(input.specBody);
       const id = input.featureId || m.slug;
-      if (!id) return { ok: false, error: 'slug를 찾지 못했습니다.' };
+      if (!id) return { ok: false, error: '대상 스펙 경로에서 slug를 찾지 못했습니다.' };
+      if (!input.baseBranch) return { ok: false, error: 'base 브랜치를 선택하세요 (/issue 로 만든 `…/base`).' };
       const ref = db.doc('features/' + id);
       const existing = findCache(id);
-      const assets = await uploadAssets(id, input.assets);
+      // 버전 소유권은 mino-spec 스킬 — 헤더 값을 그대로 반영한다.
+      const version = m.specVersion || '';
+      const figma = mergeFigma(m.figmaSources, input.figmaSources);
 
       if (!existing) {
-        // 버전은 대시보드 소유 — 항상 v0.1.0 시작(0.x→머지 시 1.0.0 승격).
-        const initVer = VER.INIT;
-        const initLog = [VER.logEntry(initVer, 'init', today(), VER.stripHistory(input.specBody))];
         await ref.set({
-          slug: m.slug, title: m.title || id, status: 'spec_draft', planStale: false,
-          specVersion: initVer, figmaSources: input.figmaSources || [],
-          prNumber: null, prUrl: null, specBody: VER.injectVersionHistory(input.specBody, initLog), planBody: null,
-          assets, reviews: [], versionLog: initLog,
+          slug: m.slug, title: m.title || id, status: 'spec_draft',
+          specVersion: version, specStatus: m.specStatus || '', prdVersion: m.prdVersion || '',
+          baseBranch: input.baseBranch, figmaSources: figma,
+          prNumber: null, prUrl: null, specBody: input.specBody,
+          reviews: [], versionLog: VER.applySnapshot([], version, today(), input.specBody),
           createdBy: current.uid, createdAt: serverTs(), updatedAt: serverTs(),
         });
         return { ok: true, feature: { featureId: id }, created: true };
       }
 
-      // 머지된 스펙 수정도 무효화(major). 버전은 대시보드 소유 — 마크다운값으로 덮지 않음.
-      const wasCommitted = ['spec_approved', 'plan_drafted', 'pr_open', 'merged'].includes(existing.status);
+      // 승인 이후(머지 포함) 수정은 무효화 — spec_draft 복귀 + 열린 PR close.
+      const wasCommitted = COMMITTED.includes(existing.status);
+      const nextVersion = version || existing.specVersion;
       const patch = {
         slug: m.slug || existing.slug, title: m.title || existing.title,
+        specVersion: nextVersion,
+        specStatus: m.specStatus || existing.specStatus,
+        prdVersion: m.prdVersion || existing.prdVersion,
+        baseBranch: input.baseBranch,
+        figmaSources: figma,
+        specBody: input.specBody,
+        versionLog: VER.applySnapshot(existing.versionLog, nextVersion, today(), input.specBody),
         updatedAt: serverTs(),
       };
-      if (input.figmaSources) patch.figmaSources = input.figmaSources;
-      if (input.assets) patch.assets = assets;
       let invalidated = false;
       let closePr = null;
-      let resultLog = existing.versionLog || [];
+      // 승인 이후 본문을 고쳤는데 스킬이 버전을 올리지 않았으면 경고
+      const versionStale = wasCommitted && !!version && existing.specVersion === version;
       if (wasCommitted) {
-        const level = VER.invalidationLevel(existing.status); // minor|major
-        patch.specVersion = VER.bump(existing.specVersion, level);
-        resultLog = resultLog.concat(VER.logEntry(patch.specVersion, level, today(), VER.stripHistory(input.specBody)));
-        patch.versionLog = resultLog;
-        patch.status = 'spec_draft'; patch.planStale = true; invalidated = true;
+        patch.status = 'spec_draft'; invalidated = true;
         if (existing.status === 'pr_open' && existing.prNumber) {
           closePr = existing.prNumber;
           patch.prNumber = null; patch.prUrl = null; // 웹훅 매칭 방지 위해 먼저 비운다
         }
       }
-      // 저장본에 변경 이력 표 주입(대시보드·커밋 파일 일치)
-      patch.specBody = VER.injectVersionHistory(input.specBody, resultLog);
       await ref.update(patch);
       // Firestore 를 먼저 갱신(prNumber=null)한 뒤 실제 GitHub PR close → 웹훅이 매칭 못 해 상태 유지
       if (closePr) {
@@ -277,19 +269,7 @@
             { featureId: id, prNumber: closePr, reason: 'spec 수정으로 무효화' });
         } catch (e) { console.error('closeSpecPR 실패(무효화는 진행됨):', e.message); }
       }
-      return { ok: true, feature: { featureId: id }, invalidated };
-    },
-
-    async savePlan(id, planBody) {
-      const f = findCache(id); if (!f) return { ok: false, error: 'feature 없음' };
-      if (!auth.isDeveloper()) return { ok: false, error: '개발자만 가능' };
-      if (!['spec_approved', 'plan_drafted'].includes(f.status)) {
-        return { ok: false, error: 'plan은 spec 승인 후에만 작성할 수 있습니다.' };
-      }
-      const patch = { planBody, planStale: false, updatedAt: serverTs() };
-      if (f.status === 'spec_approved') patch.status = 'plan_drafted';
-      await db.doc('features/' + id).update(patch);
-      return { ok: true, feature: { featureId: id } };
+      return { ok: true, feature: { featureId: id }, invalidated, versionStale };
     },
 
     async requestReview(id) {
@@ -298,15 +278,7 @@
       if (!['spec_draft', 'spec_changes_requested'].includes(f.status)) {
         return { ok: false, error: `현재 상태(${f.status})에서는 컨펌 요청 불가` };
       }
-      const patch = { status: 'spec_in_review', updatedAt: serverTs() };
-      // 반려 후 재제출 = PATCH bump. 최초 검토요청은 bump 없음.
-      if (f.status === 'spec_changes_requested') {
-        patch.specVersion = VER.bump(f.specVersion, 'patch');
-        const resultLog = (f.versionLog || []).concat(VER.logEntry(patch.specVersion, 'patch', today(), VER.stripHistory(f.specBody)));
-        patch.versionLog = resultLog;
-        patch.specBody = VER.injectVersionHistory(f.specBody, resultLog);
-      }
-      await db.doc('features/' + id).update(patch);
+      await db.doc('features/' + id).update({ status: 'spec_in_review', updatedAt: serverTs() });
       return { ok: true, feature: { featureId: id } };
     },
 
@@ -350,7 +322,8 @@
     async createPr(id) {
       const f = findCache(id); if (!f) return { ok: false, error: 'feature 없음' };
       if (!auth.isDeveloper()) return { ok: false, error: '개발자만 PR 생성 가능' };
-      if (f.status !== 'plan_drafted') return { ok: false, error: 'plan 작성 후에만 PR 생성 가능' };
+      if (f.status !== 'spec_approved') return { ok: false, error: 'spec 승인(spec_approved) 후에만 PR 생성 가능' };
+      if (!f.baseBranch) return { ok: false, error: 'base 브랜치가 지정되지 않았습니다. spec 수정에서 선택하세요.' };
       try {
         const fn = firebase.functions().httpsCallable('createSpecPR');
         const res = await fn({ featureId: id });
@@ -369,22 +342,13 @@
     async syncFromWebhook(id, kind) {
       const f = findCache(id); if (!f) return { ok: false, error: 'feature 없음' };
       if (f.status !== 'pr_open') return { ok: false, error: 'PR 열림 상태가 아닙니다.' };
-      const patch = { status: kind === 'merged' ? 'merged' : 'pr_closed', updatedAt: serverTs() };
-      // 최초 머지 → 0.x 를 v1.0.0 으로 승격
-      if (kind === 'merged') {
-        const nv = VER.bump(f.specVersion, 'graduate');
-        if (nv !== f.specVersion) {
-          patch.specVersion = nv;
-          const resultLog = (f.versionLog || []).concat(VER.logEntry(nv, 'graduate', today(), VER.stripHistory(f.specBody)));
-          patch.versionLog = resultLog;
-          patch.specBody = VER.injectVersionHistory(f.specBody, resultLog);
-        }
-      }
-      await db.doc('features/' + id).update(patch);
+      await db.doc('features/' + id).update({
+        status: kind === 'merged' ? 'merged' : 'pr_closed', updatedAt: serverTs(),
+      });
       return { ok: true, feature: { featureId: id } };
     },
 
-    /** 변경이력 항목 사유 편집(개발자). 최신 매칭 버전의 reason 갱신. */
+    /** 스냅샷 메모 편집(개발자). 최신 매칭 버전의 reason 갱신. */
     async editVersionReason(id, version, reason) {
       const f = findCache(id); if (!f) return { ok: false, error: 'feature 없음' };
       if (!auth.isDeveloper()) return { ok: false, error: '개발자만 편집 가능' };
@@ -392,10 +356,7 @@
       for (let k = log.length - 1; k >= 0; k--) {
         if (log[k].version === version) { log[k].reason = reason; break; }
       }
-      // 사유 갱신 후 저장본에도 재주입 → 'spec 보기'·커밋 파일과 일치
-      await db.doc('features/' + id).update({
-        versionLog: log, specBody: VER.injectVersionHistory(f.specBody, log), updatedAt: serverTs(),
-      });
+      await db.doc('features/' + id).update({ versionLog: log, updatedAt: serverTs() });
       return { ok: true, feature: { featureId: id } };
     },
   };

@@ -35,7 +35,7 @@ const COLORS = {
 };
 
 // 무효화로 간주하는 복귀 출발 상태 (state-machine.md §3)
-const COMMITTED = ['spec_approved', 'plan_drafted', 'pr_open', 'merged'];
+const COMMITTED = ['spec_approved', 'pr_open', 'merged'];
 
 exports.notifyOnFeatureWrite = onDocumentWritten(
   { document: 'features/{id}', secrets: [DISCORD_WEBHOOK_URL] },
@@ -105,7 +105,10 @@ function buildMessage(id, before, after) {
     return { title: `⚠️ 무효화: ${t} — 재작업 필요`, roles: [ROLE_ANDROID], color: COLORS.invalid };
   }
   if (after.status === 'merged') {
-    return { title: `🎉 문서 확정(merged): ${t} ${v}`, roles: [ROLE_ANDROID, ROLE_DESIGN], color: COLORS.merged };
+    return {
+      title: `🎉 spec 확정(merged): ${t} ${v}`, roles: [ROLE_ANDROID, ROLE_DESIGN], color: COLORS.merged,
+      body: after.baseBranch ? `base 브랜치 \`${after.baseBranch}\` 에 반영 — 이어서 \`/mino-plan\` 진행` : '',
+    };
   }
   return null;
 }

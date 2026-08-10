@@ -4,6 +4,17 @@
 > 대상 프로젝트: **mino-android-spec-center** — SDD 문서를 작성·아카이빙하는 대시보드
 > Repo: https://github.com/mash-up-kr/mino-android-spec-center
 
+> ⚠️ **개정 (2026-08-10 · v3)** — Mino-Android 쪽 SDD 개편에 따라 아래 3건이 이 PRD의 원문을 대체한다.
+> 본문 4.1~4.8은 v1 기준 서술이 남아 있으므로, 충돌하는 대목은 **설계 문서가 최신**이다.
+>
+> | # | 변경 | 최신 출처 |
+> |---|---|---|
+> | 1 | **plan 검토 단계 제거** — `plan_drafted` 폐기, `spec_approved → pr_open` 직행. plan/task는 base 브랜치 하위 작업으로 이관 | [state-machine.md](design/state-machine.md) |
+> | 2 | **spec 템플릿 교체** — 필수 H2 8개 → 4개, slug 출처가 주석 → 헤더 `**대상 스펙 경로**`, 통제 어휘 → FR/UX/SC ID, 이미지 → Figma 노드 URL, 버전 소유권을 `/mino-spec` 스킬로 이관 | [validation.md](design/validation.md) · Mino-Android `mino-sdd/template/spec-template.md` |
+> | 3 | **머지 타겟 브랜치 변경** — base `develop` 고정 → 이슈별 `<prefix>/<번호>-<slug>/base`, head는 `…/spec` | [state-machine.md](design/state-machine.md) §5 · Mino-Android `docs/conventions/base-branch.md` |
+>
+> 생성 스킬 이름도 바뀌었다: `spec-gen`/`plan-gen`/`spec-reviewer` → `/mino-spec`·`/mino-plan`·`/mino-task`, 이슈·브랜치 생성은 `/issue`.
+
 > 📌 이 문서는 본 프로젝트의 **정본 PRD**다. 각 설계 문서([docs/design/](design/)) · 운영 문서([docs/ops/](ops/))가 "출처"로 인용하는 원천이며, 구현과의 차이는 설계 문서 쪽에 최신화되어 있다.
 > `mino.md`(상위 기획) · `mino_android.md` · `skills/*`(생성 스킬·검수 에이전트)는 **기획/Mino-Android 레포 소관**이라 이 레포에는 포함되지 않는다(본문에서 코드체로 표기).
 
@@ -70,25 +81,24 @@ spec-center는 **Spec Driven Development(SDD) 문서 파이프라인의 컨트�
 ### 4.2 붙여넣기 & 구조 검증
 - spec.md 텍스트 + 이미지 파일을 함께 업로드(drag-drop).
 - **가벼운 구조 검증** (1차 자가검수는 `spec-reviewer`가 이미 수행 → 대시보드는 2차 방어선. 내용 품질은 컨펌 게이트가 흡수):
-  - 맨 첫 줄 `<!-- feature: {slug} -->` 주석 존재
-  - 필수 H2 제목 8개 존재
-  - `2. 화면 상태별 읽기`에 이미지 ≥ 1
-  - `interactionType` / 확정 enum 유효, 빈 값 아님
-- 검증 항목 정의·드라이런 시나리오: `skills/VALIDATION.md` (대시보드 자동 검증 항목 = `spec-reviewer` 검수 체크포인트와 동일 기준).
+  - ~~맨 첫 줄 `<!-- feature: {slug} -->` 주석 존재~~ → 헤더 `**대상 스펙 경로**: docs/specs/{slug}`
+  - ~~필수 H2 제목 8개~~ → **필수 H2 4개**(유저 시나리오·요구사항·범위·가정)
+  - ~~`2. 화면 상태별 읽기`에 이미지 ≥ 1~~ → 이미지 폐기. 화면 근거는 `**Figma**:` 노드 URL
+  - ~~`interactionType` / 확정 enum~~ → **FR/UX/SC/TS ID 컨벤션** + 헤더 메타(상태·버전·날짜·기준 PRD) + 템플릿 자리표시자 잔여 0건
+- **v3 기준 검증 항목의 최신 정의는 [validation.md](design/validation.md)** (1차 방어선 = `/mino-spec` 품질 체크리스트 PASS → 헤더 `상태: CREATED`). 단, `DRAFT`·`[TBD]` 잔여는 **차단이 아니라 경고** — 확정이 필요한 스펙을 검수에 올리는 것이 이 대시보드의 목적이다.
 
-### 4.3 이미지 업로드 & 보관
-- drag-drop 업로드 → **Firebase Storage** 저장 (프리뷰 렌더 + 원본 = source of truth 일부).
-- 상대경로 `![](assets/x.png)`가 레포 `specs/{feature}/`에서도 그대로 렌더되도록 PR 커밋 시 `assets/`에 동봉.
+### 4.3 이미지 업로드 & 보관 — **폐기 (v3)**
+> 신 템플릿은 화면 근거를 **Figma 노드 URL**로 적는다. 이미지 업로드·Storage 보관·`assets/` 커밋 파이프라인은 제거됐고, `figmaSources`는 본문 `**Figma**:` 줄에서 자동 수집한다. [data-model.md](design/data-model.md) §2 참고.
 
 ### 4.4 편집 UI
 - textarea 기반 편집. 소스=마크다운, 사용자=개발자이므로 풀 WYSIWYG 불필요.
 - 라이브 마크다운 프리뷰(이미지 렌더 포함)는 **Post-MVP**(8장) — 이미지 확인용으로 우선순위 높음.
 
 ### 4.5 디자이너 컨펌 게이트
-- 디자이너가 대시보드에서 승인/반려/코멘트. **spec 컨펌 전 plan 불가.**
+- 디자이너가 대시보드에서 승인/반려/코멘트. **spec 컨펌 전 PR 생성 불가.** (v1의 "plan 불가"는 plan 단계 제거로 대체)
 - 승인 단위: **spec 문서 전체** (화면별 X).
 - **검토 중 잠금**: `in_review` 동안 spec read-only.
-- **무효화**: `approved` spec을 어떤 수정이든 하면 → `draft` 복귀, 재컨펌 필수, 하위 plan `stale` 표시.
+- **무효화**: `approved` spec을 어떤 수정이든 하면 → `draft` 복귀, 재컨펌 필수. (v3: `planStale` 폐기)
 - **코멘트**: 디자이너 결정 + spec **섹션(제목) 앵커 인라인 코멘트**(Notion식). 미리보기에서 각 H2/H3 옆 💬로 코멘트를 달고, 코멘트별 개별 삭제 가능. 반려 제출 시 코멘트 ≥1 필수.
 - **반려 후 보충 코멘트**: `changes_requested` 상태에서도 디자이너가 스펙을 다시 열어 **상태 변화 없이** 코멘트를 추가할 수 있다(리뷰 결정 `decision=comment`). 승인/반려 "결정"과 구분되어 이력에 누적된다.
 - **출처 링크 첨부**: spec이 어떤 Figma 링크 기반인지 source URL을 메타로 첨부해 컨펌 화면에 노출.
@@ -116,29 +126,30 @@ plan 프롬프트에 docs 선별 규칙을 강제한다. (로컬 Claude Code가 
 **PR 컨벤션** (개발 PR과 별도)
 | 항목 | 값 |
 |------|------|
-| 브랜치명 | `docs/spec-{feature}-v{n}` (`{n}`=풀 버전명, 예: `docs/spec-openchat-list-v0.1.0`) |
-| base | `develop` |
+| 브랜치명 | ~~`docs/spec-{feature}-v{n}`~~ → **`<prefix>/<이슈번호>-<slug>/spec`** (base 브랜치에서 분기) |
+| base | ~~`develop`~~ → **`<prefix>/<이슈번호>-<slug>/base`** (`/issue` 산출물, 업로드 시 선택) |
 | 라벨 | `spec` |
-| PR 제목 | `docs(spec): {feature} v{n}` |
-| PR 템플릿 | 얼라인 체크리스트 (spec 컨펌됨 / plan 검증됨 / 담당자) |
+| PR 제목 | `docs(spec): {slug} {버전}` |
+| 커밋 대상 | `docs/specs/{slug}/spec.md` **만** (plan.md·assets 커밋 폐기) |
+| PR 템플릿 | 얼라인 체크리스트 (spec 컨펌됨 / 품질 체크리스트 통과 / 담당자) + head→base 표기 |
 
-- **버저닝**: spec 버전이 올라갈 때마다 새 브랜치/PR. 버전 원천은 spec.md `변경 이력` 표 최신 행 버전명(frontmatter 없이 파싱).
+- **버저닝**: 버전 원천은 spec.md 헤더 `**버전**` 이며 **`/mino-spec` 스킬이 소유**한다(대시보드 bump·`변경 이력` 표 주입 폐기). 같은 base 브랜치의 spec 브랜치는 재사용되므로 개정 시 같은 PR에 커밋이 쌓인다.
 - **역방향 동기화**: GitHub `pull_request` Webhook → Cloud Function(HMAC 검증) → Firestore 상태 갱신. `merged`→`merged` / 미머지 close→`closed`.
 
 ### 4.8 전체 파이프라인 상태머신
 **단위**: `specs/{feature}/` 한 묶음(spec.md + plan.md)이 단일 `status`를 가진다.
 
+> v3 개정: `plan_drafted` 단계가 빠지고 `spec_approved` 에서 곧바로 PR 을 만든다.
+
 ```
 spec_draft ──(컨펌요청)──▶ spec_in_review ──(승인)──▶ spec_approved
-  ▲                            │                          │ (plan 붙여넣기)
+  ▲                            │                          │ (PR 생성 → base 브랜치 타겟)
   │                            └──(반려)──▶ spec_changes_requested
-  │                                              │ (수정 후 재요청)
-  │                                              └──▶ spec_in_review
-  │                                                        ▼
-  │                                                  plan_drafted ──(PR 생성)──▶ pr_open
+  │                                              │ (수정 후 재요청)                ▼
+  │                                              └──▶ spec_in_review           pr_open
   │                                          ┌──(Webhook: merged)──▶ merged ✅      │
   │                                          └──(Webhook: closed)──▶ pr_closed ◀────┘
-  └──[무효화] spec_approved 이후 spec 수정 시 → spec_draft 복귀(planStale=true, 열린 PR 자동 close)
+  └──[무효화] spec_approved 이후 spec 수정 시 → spec_draft 복귀(열린 PR 자동 close)
 ```
 
 | status | 의미 | 편집 |
@@ -146,14 +157,14 @@ spec_draft ──(컨펌요청)──▶ spec_in_review ──(승인)──▶ 
 | `spec_draft` | spec 작성/수정 중 (초기 상태) | 개발자 |
 | `spec_in_review` | 디자이너 검토 중 | 잠금 |
 | `spec_changes_requested` | 반려됨 | 개발자 |
-| `spec_approved` | spec 컨펌 완료 → plan 잠금 해제 | (수정 시 무효화) |
-| `plan_drafted` | plan 작성 완료, PR 준비 | 개발자 |
-| `pr_open` | 문서 PR 열림 | - |
+| `spec_approved` | spec 컨펌 완료 → **PR 생성** 잠금 해제 | (수정 시 무효화) |
+| ~~`plan_drafted`~~ | **v3에서 폐기** | — |
+| `pr_open` | spec PR 열림 (base 브랜치 타겟) | - |
 | `merged` | 머지 완료 (종료 → 구현 단계로) | - |
 | `pr_closed` | PR 미머지 종료 | - |
 
-- **보조 메타**: `planStale`, `specVersion`, `prNumber`, `prUrl`, `figmaSources`.
-- **무효화**: `spec_approved` 이후 spec 수정 시 → `spec_draft` 복귀, `planStale=true`, 열린 PR 자동 close(코멘트로 새 버전 링크).
+- **보조 메타**: `specVersion`, `specStatus`, `prdVersion`, `baseBranch`, `prNumber`, `prUrl`, `figmaSources`. (v3: `planStale` 폐기, `baseBranch`·`specStatus`·`prdVersion` 신설)
+- **무효화**: `spec_approved` 이후 spec 수정 시 → `spec_draft` 복귀, 열린 PR 자동 close(무효화 코멘트).
 - **plan 검증 게이트 없음**: plan은 PR 리뷰(얼라인)에서 검증. 디자이너는 spec만 관여.
 
 ### 4.8.1 두 게이트의 관계 (디자이너 컨펌 ↔ CODEOWNERS PR 리뷰)
@@ -171,7 +182,7 @@ spec_draft ──(컨펌요청)──▶ spec_in_review ──(승인)──▶ 
 | 결과 | 처리 | 전이 | 디자이너 재컨펌 |
 |---|---|---|---|
 | Approve → merge | — | `pr_open → merged` | — |
-| **plan 수정 요청** | PR close → 대시보드서 plan 재생성 → 재PR | `pr_open → pr_closed → plan_drafted → pr_open` | 불필요(spec 버전 동일) |
+| **plan 수정 요청** | v3에서는 대시보드 밖 — base 브랜치 하위 `…/plan` 브랜치에서 처리 | (대시보드 전이 없음) | 불필요 |
 | **spec 결함 발견** | 에스컬레이션: 코멘트만 남기고 개발자가 대시보드서 spec 수정 = 무효화 | 무효화 체인 → `spec_draft` | 필요 |
 
 > plan 인플레이스 커밋 업데이트(PR 닫지 않고 새 커밋)는 Post-MVP. MVP는 close+재PR로 단순화.
@@ -208,18 +219,21 @@ spec_draft ──(컨펌요청)──▶ spec_in_review ──(승인)──▶ 
 
 ## 6. 데이터 모델 (Firestore)
 
+> v3 실제 스키마는 [design/data-model.md](design/data-model.md) 가 최신이다. 아래는 v1 원안이며,
+> `planStale`·`planBody`·`assets` 는 삭제됐고 `baseBranch`·`specStatus`·`prdVersion` 이 신설됐다.
+
 ```
 features/{featureId}
-  ├─ slug: string              # specs/{slug}/ 경로
+  ├─ slug: string              # docs/specs/{slug}/ 경로 (v3: 헤더 `**대상 스펙 경로**` 에서 파싱)
   ├─ status: enum              # 4.8 상태머신
-  ├─ planStale: boolean
-  ├─ specVersion: string       # 변경 이력 최신 행 버전명
-  ├─ figmaSources: string[]    # 컨펌 화면 출처 노출
+  ├─ planStale: boolean        # v3 삭제
+  ├─ specVersion: string       # v3: spec.md 헤더 `**버전**` (스킬 소유)
+  ├─ figmaSources: string[]    # 컨펌 화면 출처 노출 (v3: 본문 `**Figma**:` 에서 자동 수집)
   ├─ prNumber: number | null
   ├─ prUrl: string | null
   ├─ specBody: string          # spec.md 본문 (SoT)
-  ├─ planBody: string | null   # plan.md 본문
-  ├─ assets: [{ name, storagePath }]
+  ├─ planBody: string | null   # v3 삭제
+  ├─ assets: [{ name, storagePath }]   # v3 삭제
   └─ reviews: [{ reviewId, decision, comments, reviewerUid, reviewedAt }]
        # MVP: feature 문서 내 배열 필드(서브컬렉션 전환은 후속).
        # decision: approved | changes_requested | comment
@@ -283,7 +297,7 @@ users/{uid}
 | **M1** | spec 작성 루프 | 생성 스킬(`spec-gen`+`spec-reviewer`) 사용 안내 / 붙여넣기 저장(textarea) / 이미지 drag-drop→Storage / 출처 Figma URL 입력 / 경량 구조 검증 / status=`spec_draft` 생성 | M0 |
 | **M2** | 컨펌 게이트 | 디자이너 승인·반려·코멘트 / 전이(`in_review`·`approved`·`changes_requested`) / 검토 중 잠금 / 출처 Figma 메타 노출 | M1 |
 | **M3** | plan + PR 생성 | `plan-gen` 스킬 실행+붙여넣기(`approved` 후) / `githubOAuthExchange` / `createSpecPR` → `pr_open` | M2 |
-| **M4** | 상태머신 완결 | `githubWebhook`(HMAC→Firestore) `merged`/`pr_closed` / **무효화 연쇄**(`spec_draft` 복귀 + `planStale=true` + 열린 PR 자동 close + 새 버전 링크 코멘트) | M3 |
+| **M4** | 상태머신 완결 | `githubWebhook`(HMAC→Firestore) `merged`/`pr_closed` / **무효화 연쇄**(`spec_draft` 복귀 + 열린 PR 자동 close) — v3에서 `planStale` 제외 | M3 |
 
 → **M0–M4 = MVP.** 8개 상태(4.8) 전부 도달·전이 완결.
 

@@ -4,7 +4,7 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>MASC · Mino Android Spec Center</title>
-  <link rel="stylesheet" href="styles.css?v=12" />
+  <link rel="stylesheet" href="styles.css?v=14" />
 </head>
 <body>
   <!-- 부팅 에러를 빈 화면 대신 표면화 -->
@@ -63,7 +63,6 @@
           <div class="side-section">
             <div class="lbl">빠른 필터</div>
             <div class="chips" id="quick-filters">
-              <button class="chip" data-q="planStale">plan 오래됨</button>
               <button class="chip" data-q="pr">PR 연결</button>
               <button class="chip" data-q="mine">내 담당</button>
             </div>
@@ -140,24 +139,7 @@
       </div>
     </div>
 
-    <!-- plan 붙여넣기 모달 -->
-    <div id="plan-modal" class="modal-overlay hidden">
-      <div class="modal-card modal-wide">
-        <div class="modal-head">
-          <h2 id="plan-title">plan 붙여넣기</h2>
-          <button class="modal-close" data-close="plan-modal" aria-label="닫기">×</button>
-        </div>
-        <div class="modal-body" id="plan-body"></div>
-        <div class="modal-foot">
-          <span class="editor-msg" id="plan-msg"></span>
-          <div class="spacer"></div>
-          <button class="btn-ghost" data-close="plan-modal">취소</button>
-          <button class="btn-primary" id="plan-save">저장</button>
-        </div>
-      </div>
-    </div>
-
-    <!-- 문서 보기 모달 (spec/plan) — 디자이너·검토중이면 리뷰 모드 -->
+    <!-- 문서 보기 모달 (spec) — 디자이너·검토중이면 리뷰 모드 -->
     <div id="doc-modal" class="modal-overlay hidden">
       <div class="modal-card modal-xwide">
         <div class="modal-head">
@@ -223,7 +205,7 @@
           <button class="login-user" id="onboard-dev">
             <span class="avatar">D</span><span class="lu-name">개발자</span>
             <span class="lu-role developer">developer</span>
-            <span class="lu-gh">spec 작성·plan·PR</span>
+            <span class="lu-gh">spec 작성·PR</span>
           </button>
           <button class="login-user" id="onboard-designer">
             <span class="avatar">D</span><span class="lu-name">디자이너</span>
@@ -240,16 +222,15 @@
   <script src="https://www.gstatic.com/firebasejs/10.12.5/firebase-app-compat.js"></script>
   <script src="https://www.gstatic.com/firebasejs/10.12.5/firebase-auth-compat.js"></script>
   <script src="https://www.gstatic.com/firebasejs/10.12.5/firebase-firestore-compat.js"></script>
-  <script src="https://www.gstatic.com/firebasejs/10.12.5/firebase-storage-compat.js"></script>
   <script src="https://www.gstatic.com/firebasejs/10.12.5/firebase-functions-compat.js"></script>
 
   <script src="js/firebase-config.js?v=7"></script>
-  <script src="data/seed.js?v=4"></script>
-  <script src="js/spec-parse.js?v=4"></script>
-  <script src="js/validate.js?v=4"></script>
-  <script src="js/version.js?v=3"></script>
-  <script src="js/store-firebase.js?v=17"></script>
-  <script src="js/store.js?v=14"></script>
-  <script src="js/app.js?v=20"></script>
+  <script src="data/seed.js?v=5"></script>
+  <script src="js/spec-parse.js?v=5"></script>
+  <script src="js/validate.js?v=5"></script>
+  <script src="js/version.js?v=4"></script>
+  <script src="js/store-firebase.js?v=18"></script>
+  <script src="js/store.js?v=15"></script>
+  <script src="js/app.js?v=22"></script>
 </body>
 </html>

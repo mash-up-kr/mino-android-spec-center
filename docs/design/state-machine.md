@@ -1,25 +1,37 @@
 # 파이프라인 상태머신 (구현 명세)
 
 > 출처: [PRD](../PRD.md) 4.5 · 4.8 · 6장 · 8장
-> 상태: **구현 완료 (M0–M4 MVP, 실 백엔드 검증)** · v2 재설계 기준
-> 단위: `docs/specs/{feature}/` 한 묶음(spec.md + plan.md)이 **단일 `status`** 를 가진다.
+> 상태: **구현 완료 (M0–M4 MVP, 실 백엔드 검증)** · v3 (plan 단계 제거 · base 브랜치 타겟) 기준
+> 단위: `docs/specs/{feature}/spec.md` 한 건이 **단일 `status`** 를 가진다.
 
 문서 "진실"은 Firestore(`features/{id}`)다. 레포 파일은 스냅샷이며 역수정하지 않는다.
 
-## 1. 상태(enum) — 8개
+## 0. v3 변경 요약 (2026-08-10)
 
-| status | 의미 | 편집 권한 | spec | plan |
-|---|---|---|---|---|
-| `spec_draft` | spec 작성/수정 중 (초기 상태) | 개발자 | 편집가능 | 잠금 |
-| `spec_in_review` | 디자이너 검토 중 | **read-only** | 잠금 | 잠금 |
-| `spec_changes_requested` | 반려됨 | 개발자 | 편집가능 | 잠금 |
-| `spec_approved` | spec 컨펌 완료 → plan 잠금 해제 | (수정 시 무효화) | read-only* | 편집가능 |
-| `plan_drafted` | plan 작성 완료, PR 준비 | 개발자 | read-only* | 편집가능 |
-| `pr_open` | 문서 PR 열림 | — | — | — |
-| `merged` | 머지 완료 (종료 → 구현 단계로) | — | — | — |
-| `pr_closed` | PR 미머지 종료 | — | — | — |
+| 항목 | v2 | v3 |
+|---|---|---|
+| plan 검토 단계 | `spec_approved → plan_drafted → pr_open` | **`plan_drafted` 폐기** — `spec_approved → pr_open` |
+| PR base 브랜치 | `develop` 고정 | 이슈별 `<prefix>/<이슈번호>-<slug>/base` |
+| PR head 브랜치 | `docs/spec-{slug}-{version}` | `<prefix>/<이슈번호>-<slug>/spec` |
+| 커밋 대상 | `spec.md` + `plan.md` + `assets/*` | **`spec.md` 만** |
+| 버전 소유권 | 대시보드가 bump | **로컬 `/mino-spec` 스킬**이 소유, 대시보드는 읽기만 |
 
-\* `spec_approved`/`plan_drafted`에서 spec을 **어떤 수정이든** 하면 무효화 연쇄(§3) 발동.
+plan/task 는 대시보드를 거치지 않고 같은 base 브랜치 아래 하위 작업 브랜치로 진행한다
+(Mino-Android `docs/conventions/base-branch.md`). 디자이너 컨펌 게이트는 **spec 에만** 적용된다.
+
+## 1. 상태(enum) — 7개
+
+| status | 의미 | 편집 권한 | spec |
+|---|---|---|---|
+| `spec_draft` | spec 작성/수정 중 (초기 상태) | 개발자 | 편집가능 |
+| `spec_in_review` | 디자이너 검토 중 | **read-only** | 잠금 |
+| `spec_changes_requested` | 반려됨 | 개발자 | 편집가능 |
+| `spec_approved` | spec 컨펌 완료 → PR 생성 잠금 해제 | (수정 시 무효화) | read-only* |
+| `pr_open` | spec PR 열림 (base 브랜치 타겟) | — | — |
+| `merged` | base 브랜치에 머지 완료 → plan/task 단계로 | — | — |
+| `pr_closed` | PR 미머지 종료 | — | — |
+
+\* `spec_approved` 이후 spec을 **어떤 수정이든** 하면 무효화 연쇄(§3) 발동.
 
 ## 2. 전이표 (trigger → guard → 결과)
 
@@ -27,11 +39,10 @@
 |---|---|---|---|---|
 | `spec_draft` | 컨펌요청 | 구조검증 통과(validation.md) · role=developer | `spec_in_review` | spec read-only 잠금 |
 | `spec_changes_requested` | 컨펌요청(재요청) | 위와 동일 | `spec_in_review` | — |
-| `spec_in_review` | 승인 | role=designer | `spec_approved` | `reviews/` 기록 · plan 잠금 해제 |
-| `spec_in_review` | 반려+코멘트 | role=designer · 코멘트≥1 | `spec_changes_requested` | `reviews/` 기록 |
-| `spec_approved` | plan 붙여넣기 | role=developer · planBody 존재 | `plan_drafted` | — |
-| `plan_drafted` | PR 생성 | role=developer · 로그인 토큰이 PR 권한 보유 | `pr_open` | `createSpecPR` 호출 · prNumber/prUrl 기록 |
-| `pr_open` | Webhook: merged | HMAC 검증 | `merged` | 최초 머지 시 specVersion 승격(→v1.0.0) |
+| `spec_in_review` | 승인 | role=designer | `spec_approved` | `reviews[]` 기록 · PR 생성 잠금 해제 |
+| `spec_in_review` | 반려+코멘트 | role=designer · 코멘트≥1 | `spec_changes_requested` | `reviews[]` 기록 |
+| `spec_approved` | PR 생성 | role=developer · `baseBranch` 유효 · 로그인 토큰이 PR 권한 보유 | `pr_open` | `createSpecPR` 호출 · prNumber/prUrl 기록 |
+| `pr_open` | Webhook: merged | HMAC 검증 | `merged` | — (버전 조작 없음) |
 | `pr_open` | Webhook: closed(미머지) | HMAC 검증 | `pr_closed` | — |
 | `pr_closed` | 재오픈/재PR | role=developer | `pr_open` | 새 PR 또는 재오픈 |
 
@@ -40,43 +51,59 @@
 ### 무효화 전이 (어느 상태에서든)
 | from | trigger | to | 부수효과 |
 |---|---|---|---|
-| `spec_approved` · `plan_drafted` · `pr_open` · `merged` | spec 수정 | `spec_draft` | `planStale=true` · 열린 PR 자동 close(`closeSpecPR`, 새 버전 링크 코멘트) · specVersion bump(승인후=minor / 머지후=major) |
+| `spec_approved` · `pr_open` · `merged` | spec 수정 | `spec_draft` | 열린 PR 자동 close(`closeSpecPR`) · 버전이 그대로면 `versionStale` 경고 |
 
 ## 3. 무효화 연쇄 (4.5 · 4.8 · M4)
 
-`spec_approved`(또는 `plan_drafted`/`pr_open`/`merged`) 이후 spec 본문을 수정하면:
+`spec_approved`(또는 `pr_open`/`merged`) 이후 spec 본문을 수정하면:
 1. `status → spec_draft` 복귀 (재컨펌 필수)
-2. `planStale = true` (하위 plan에 "오래됨" 표시)
-3. 열린 PR(`pr_open`)이 있으면 **자동 close**(`closeSpecPR`) + 코멘트에 새 버전 링크
-4. `specVersion` **자동 bump** — 대시보드가 소유(§ 아래). 파급범위 기준: 승인후 수정=minor, 머지후 수정=major. 새 항목이 `versionLog`에 append되고 `변경 이력` 표는 이 로그로부터 재생성.
+2. 열린 PR(`pr_open`)이 있으면 **자동 close**(`closeSpecPR`) + 무효화 코멘트
+3. 새 본문이 `versionLog` 스냅샷에 반영 — 헤더 버전이 올라갔으면 새 항목 append, 그대로면 마지막 항목의 스냅샷만 갱신하고 **버전 미변경 경고**를 띄운다
 
-> **버저닝 소유권(2026-07-06)**: `specVersion`은 더 이상 본문 `변경 이력` 표에서 **파싱하지 않는다**. 대시보드가 `versionLog[]`(버전·이벤트·사유·날짜·스냅샷)를 소유하고, 상태 전이 이벤트에서만 bump한다(저장마다 X — 노이즈 방지). `## 변경 이력` 표는 이 로그로부터 자동 생성돼 specBody·PR 커밋 파일에 주입된다(`js/version.js`·`functions/index.js` 미러). bump 레벨: `init`(최초) · `patch`(반려→재제출) · `minor`(승인후 무효화) · `major`(머지후 무효화) · `graduate`(최초 머지 → v1.0.0).
+> **버저닝 소유권(2026-08-10 개정)**: `specVersion`은 **로컬 `/mino-spec` 스킬**이 소유한다. 스킬이 개정 등급(MAJOR/MINOR/PATCH)을 사용자 승인 하에 판정해 spec.md 헤더 `**버전**`을 올리고, 대시보드는 업로드 시 그 값을 **읽기만** 한다. v2의 대시보드 자동 bump·`## 변경 이력` 표 주입·`v0.1.0` 강제·머지 시 승격은 모두 폐기됐다.
+> 대시보드가 유지하는 것은 **버전별 본문 스냅샷**(`versionLog[].body`)뿐이며, 목적은 재검토 시 "지난 검토 이후 변경분" diff 를 만드는 것이다. MAJOR/MINOR/PATCH 뱃지는 직전 스냅샷과의 semver 비교로 표시 시점에 파생한다(`js/version.js` `levelBetween`).
 
-> plan은 별도 대시보드 컨펌 게이트가 **없다**. plan 검증은 PR 리뷰(얼라인)가 흡수. 디자이너는 spec에만 관여.
+> plan은 대시보드 컨펌 게이트가 **없다**(v3에서 `plan_drafted` 상태 자체를 제거). plan 검증은 base 브랜치 하위 PR 리뷰가 흡수한다. 디자이너는 spec에만 관여.
 
 ## 4. 다이어그램
 
-```
-spec_draft ──(컨펌요청)──▶ spec_in_review ──(승인)──▶ spec_approved
-  ▲                            │                          │ (plan 붙여넣기)
-  │                            └──(반려)──▶ spec_changes_requested
-  │                                              │ (수정 후 재요청)
-  │                                              └──▶ spec_in_review
-  │                                                        ▼
-  │                                                  plan_drafted ──(PR 생성)──▶ pr_open
-  │                                          ┌──(Webhook: merged)──▶ merged ✅      │
-  │                                          └──(Webhook: closed)──▶ pr_closed ◀────┘
-  └──[무효화] spec_approved 이후 spec 수정 시 → spec_draft 복귀
-            (planStale=true, 열린 PR 자동 close)
+```mermaid
+flowchart LR
+    draft["spec_draft"] -->|컨펌요청| review["spec_in_review"]
+    review -->|승인| approved["spec_approved"]
+    review -->|반려+코멘트| changes["spec_changes_requested"]
+    changes -->|수정 후 재요청| review
+    approved -->|PR 생성| pr["pr_open"]
+    pr -->|Webhook merged| merged["merged ✅"]
+    pr -->|Webhook closed| closed["pr_closed"]
+    closed -->|재PR| pr
+    approved -.->|spec 수정 = 무효화| draft
+    pr -.->|spec 수정 = 무효화<br/>열린 PR close| draft
+    merged -.->|spec 수정 = 무효화| draft
 ```
 
-## 5. 마일스톤 매핑 (어느 전이가 어느 M에서 동작하는가)
+## 5. 브랜치 흐름 (base-branch.md 연계)
+
+```mermaid
+flowchart TD
+    dev["develop"] -->|"/issue"| base["feature/N-slug/base"]
+    base -->|"대시보드 PR 생성"| spec["feature/N-slug/spec"]
+    spec -.->|"spec PR (MASC)"| base
+    base -->|"/mino-plan (레포 로컬)"| plan["feature/N-slug/plan"]
+    plan -.->|"PR"| base
+    base -.->|"PR"| dev
+```
+
+- 대시보드가 만드는 것은 **`…/spec` 브랜치와 그 PR 뿐**이다. base 브랜치 자체는 `/issue`가, plan/task 하위 브랜치는 로컬 스킬이 만든다.
+- 대시보드는 base 브랜치를 **추측하지 않는다** — 업로드 시 개발자가 GitHub API로 조회된 `…/base` 목록에서 고르고, 그 값이 `features.baseBranch`로 저장된다.
+
+## 6. 마일스톤 매핑 (어느 전이가 어느 M에서 동작하는가)
 
 | 전이 | M |
 |---|---|
 | `spec_draft` 생성 · 구조검증 | M1 |
 | `→spec_in_review`/`→spec_approved`/`→spec_changes_requested` (컨펌 게이트) | M2 |
-| `→plan_drafted` · `→pr_open` (createSpecPR) | M3 |
+| `→pr_open` (createSpecPR) | M3 |
 | `→merged`/`→pr_closed` (Webhook) · 무효화 연쇄 | M4 |
 
-→ **8개 상태 전부 도달·전이 완결 = MVP 정의.**
+→ **7개 상태 전부 도달·전이 완결 = MVP 정의.**

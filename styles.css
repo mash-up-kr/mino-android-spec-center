@@ -167,7 +167,7 @@ table.feature-table { width: 100%; border-collapse: collapse; }
 .feature-table tbody tr:hover { background: var(--bg); }
 .feature-table tr.selected { background: var(--accent-soft); }
 .feat-title { font-weight: 600; }
-.feat-sub { color: var(--muted); font-size: 12px; }
+.feat-sub { color: var(--muted); font-size: 12px; overflow-wrap: anywhere; }
 .mono { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 12px; color: var(--muted); }
 
 /* Badges & pills */
@@ -208,9 +208,15 @@ table.feature-table { width: 100%; border-collapse: collapse; }
 .detail-badges { display: flex; gap: 6px; flex-wrap: wrap; }
 .detail-section { padding: 14px 16px; border-bottom: 1px solid var(--border); }
 .detail-section h3 { font-size: 11px; text-transform: uppercase; letter-spacing: .04em; color: var(--muted-2); margin: 0 0 10px; }
+/* Figma 출처 — 링크 라벨을 항목별 한 줄씩 (긴 URL 대신) */
+.figma-links { margin: 0; padding-left: 16px; font-size: 13px; line-height: 1.7; overflow-wrap: anywhere; }
+.figma-links li { list-style: disc; margin-bottom: 2px; }
+.figma-links li::marker { color: var(--muted-2); }
+.figma-links a { color: var(--accent); text-decoration: none; }
+.figma-links a:hover { text-decoration: underline; }
 .kv { display: flex; gap: 8px; margin-bottom: 6px; font-size: 13px; }
 .kv .k { width: 70px; color: var(--muted); flex: none; }
-.kv .v { flex: 1; }
+.kv .v { flex: 1; min-width: 0; overflow-wrap: anywhere; word-break: break-word; }
 .ac-list, .tbd-list { margin: 0; padding-left: 0; list-style: none; }
 .ac-list li { display: flex; gap: 8px; font-size: 13px; margin-bottom: 7px; }
 .ac-list li .id { font-family: ui-monospace, monospace; font-size: 11px; color: var(--accent); background: var(--accent-soft); border-radius: 5px; padding: 1px 6px; height: fit-content; }
@@ -223,6 +229,8 @@ table.feature-table { width: 100%; border-collapse: collapse; }
 
 /* Badge tooltip cue */
 .badge[title] { cursor: help; }
+/* 피쳐 목록 상태 칸 — 상태 뱃지 + (있을 때만) TBD 잔여 건수 */
+.status-cell { display: flex; gap: 4px; flex-wrap: wrap; align-items: center; }
 
 /* ===================== Modal (상태 안내) ===================== */
 .modal-overlay {
@@ -423,14 +431,14 @@ table.feature-table { width: 100%; border-collapse: collapse; }
 
 /* Pipeline stepper */
 .stepper { display: flex; align-items: center; gap: 4px; margin: 14px 0 4px; flex-wrap: wrap; }
-.step { display: flex; flex-direction: column; align-items: center; gap: 4px; min-width: 44px; }
+/* 라벨이 dot 보다 넓어도 패널 밖으로 밀리지 않게 — 마지막 스텝 라벨 잘림 방지 */
+.step { display: flex; flex-direction: column; align-items: center; gap: 4px; min-width: 44px; flex-shrink: 0; }
 .step .dot { width: 12px; height: 12px; border-radius: 999px; background: var(--gray-bg); border: 2px solid var(--border); }
-.step .slabel { font-size: 10px; color: var(--muted); }
+.step .slabel { font-size: 10px; color: var(--muted); white-space: nowrap; }
 .step.active .dot { background: var(--accent); border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-soft); }
 .step.active .slabel { color: var(--accent); font-weight: 700; }
 .step.done .dot { background: var(--green); border-color: var(--green); }
 .sline { flex: 1; height: 2px; background: var(--border); min-width: 10px; margin-top: -14px; }
-.step-branch { font-size: 11px; color: var(--red); font-weight: 600; margin-left: 8px; }
 
 /* Dropzone & assets */
 .dropzone {
@@ -439,16 +447,32 @@ table.feature-table { width: 100%; border-collapse: collapse; }
   display: flex; flex-direction: column; align-items: center; gap: 8px;
 }
 .dropzone.over { border-color: var(--accent); background: var(--accent-soft); color: var(--accent); }
-.up-assets-wrap { margin-top: 10px; }
-.up-assets { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 4px; }
-.asset-chip { background: var(--bg); border: 1px solid var(--border); border-radius: 7px; padding: 2px 6px; font-size: 11px; display: inline-flex; align-items: center; gap: 4px; }
-.asset-chip button { border: none; background: transparent; color: var(--muted); cursor: pointer; font-size: 13px; line-height: 1; }
-.asset-chip button:hover { color: var(--red); }
 
-/* Validation errors */
-.up-errors { margin-top: 10px; }
-.up-err { font-size: 12px; color: var(--red); padding: 4px 0; border-top: 1px solid var(--border); }
-.up-err .ecode { font-weight: 700; font-family: ui-monospace, monospace; margin-right: 6px; }
+/* base 브랜치 선택 (업로드 모달) — /issue 가 만든 `…/base` 목록 */
+.base-branch-row { display: flex; gap: 6px; align-items: center; margin: 4px 0 6px; }
+.base-select {
+  flex: 1; min-width: 0; padding: 7px 9px; border: 1px solid var(--border); border-radius: 8px;
+  background: var(--bg); color: var(--text); font-size: 12px;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+}
+.base-select:focus { outline: none; border-color: var(--accent); }
+
+/* Validation errors/warnings — 편집기 최상단. 비어 있으면 자리를 차지하지 않는다. */
+.up-errors-box, .up-warns { padding: 8px 10px; border-radius: 8px; margin-bottom: 10px; }
+.up-errors-box { border: 1px solid var(--red); background: var(--red-bg); }
+/* 경고 = DRAFT · [TBD] 잔여. 저장을 막지 않고 검수 포인트만 알린다. */
+.up-warns { border: 1px solid var(--amber); background: var(--amber-bg); }
+.up-err, .up-warn { font-size: 12px; padding: 4px 0; border-top: 1px solid var(--border); }
+.up-err { color: var(--red); }
+.up-warn { color: var(--amber); }
+.up-err .ecode, .up-warn .ecode { font-weight: 700; font-family: ui-monospace, monospace; margin-right: 6px; }
+
+/* 미완성 스펙 안내 (DRAFT · [TBD] 잔여) — 상세 패널 문서 섹션 */
+.spec-draft-note {
+  margin-top: 6px; padding: 6px 8px; font-size: 12px; border-radius: 6px;
+  border: 1px solid var(--amber); background: var(--amber-bg); color: var(--amber);
+}
+.spec-draft-note code { font-family: ui-monospace, monospace; }
 
 /* Review (designer) — 컨펌 이력 (상세 패널) */
 .review-item { padding: 8px 0; border-top: 1px solid var(--border); }

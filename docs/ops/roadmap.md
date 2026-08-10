@@ -74,7 +74,7 @@
 
 ## M3 · plan + PR 생성
 > **2026-07-04 발견**: Firebase Auth GitHub provider가 A(GitHub App) client로 설정돼 있어, **로그인 토큰이 이미 PR-capable**(스모크 테스트: `permissions.push=true`, `x-oauth-scopes` 비어있음 = App user-to-server 토큰). → **별도 `githubOAuthExchange`/authorize 온보딩 불필요**. createPr는 로그인 토큰으로 바로 동작. 남은 건 **e2e 검증 + assets 커밋**.
-- [x] `plan-gen` 안내 + plan 붙여넣기 (`spec_approved` 후) → `plan_drafted`
+- [x] ~~`plan-gen` 안내 + plan 붙여넣기 (`spec_approved` 후) → `plan_drafted`~~ — **P6(2026-08-10)에서 폐기**
 - [~] (BE) `githubOAuthExchange` — **배포됨·미사용**(로그인 토큰이 대체). 다른 개발자 push권한 없을 때만 대안으로 보류
 - [x] (BE) `createSpecPR` — 브랜치 생성 → 파일 커밋(spec/plan) → PR 생성. **e2e 검증 완료(2026-07-04, PR #55)**
 - [x] PR 생성 → `pr_open` — store-firebase가 `createSpecPR` 실호출(실 prNumber/prUrl). **e2e 검증 완료(PR #55)**
@@ -90,7 +90,7 @@
 ## M4 · 상태머신 완결
 - [x] (BE) `githubWebhook` — `pull_request` 수신 + HMAC 검증 — **e2e 검증 완료(PR #55 close → delivery 200)**
 - [~] merged → `merged` / 미머지 close → `pr_closed` — **close 경로 검증 완료**(PR #55 → `pr_closed`). merged 경로 코드 완비(웹훅 `pr.merged` 분기 + `graduate` 승격 → v1.0.0)이나 실 머지 e2e는 미검증(더미 PR을 develop에 머지 안 함)
-- [x] 무효화 연쇄 — approved 후 spec 수정 시: `spec_draft` 복귀 + `planStale=true` (로직)
+- [x] 무효화 연쇄 — approved 후 spec 수정 시: `spec_draft` 복귀 + `planStale=true` (로직) — P6에서 `planStale` 제거
 - [x] 무효화 시 열린 PR 자동 close — **함수 `closeSpecPR`** (개발자 토큰, 코멘트+close, head 브랜치 검증). saveSpec이 Firestore `prNumber=null` 선갱신 후 호출 → close 웹훅 매칭 실패로 `spec_draft` 유지(레이스 방지). **e2e 검증 완료(2026-07-06, PR #62: close+무효화 코멘트, spec_draft 복귀, 레이스 방지 확인)**. UI: pr_open 상세에 'spec 수정' 버튼 추가(app.js)
 - [x] specVersion 증가(새 브랜치/PR) — 재PR 시 `createSpecPR`가 `docs/spec-{slug}-{새버전}` 브랜치 자동 생성(추가 코드 불필요)
 - [x] (ops) `Team-MINO-Android` CODEOWNERS `docs/specs/** @안드3인` — **PR #54 머지 완료**. (강제하려면 develop 브랜치 보호에 "Require review from Code Owners" 활성화 필요) ([mino_android.md] 소관)
@@ -101,6 +101,19 @@
 
 ---
 
+## P6 · SDD 스킬 개편 반영 — 완료 (2026-08-10)
+
+> Mino-Android 쪽 SDD 개편(신 spec 템플릿 · `/issue` base 브랜치 워크플로우) 3건을 대시보드에 반영.
+> 근거: `mino-sdd/template/spec-template.md` · `.claude/skills/mino-spec/SKILL.md` · `docs/conventions/base-branch.md`
+
+- [x] **plan 검토 단계 제거** — `plan_drafted` 상태·plan 붙여넣기 모달·`planBody`/`planStale`·plan.md 커밋 폐기. `spec_approved → pr_open` 직행. plan/task는 base 브랜치 하위 작업으로 이관 ([state-machine.md](../design/state-machine.md) §0)
+- [x] **spec 템플릿 교체** — 필수 H2 8개 → 4개(유저 시나리오·요구사항·범위·가정). slug 출처가 `<!-- feature: -->` 주석 → 헤더 `**대상 스펙 경로**`. `interactionType`/`확정` 통제 어휘 → FR/UX/SC/TS ID 컨벤션. S1–S6 전면 재작성 ([validation.md](../design/validation.md) §0)
+- [x] **이미지 업로드·Storage·assets 커밋 폐기** — 화면 근거는 본문 `**Figma**:` 노드 URL. `figmaSources`는 본문에서 자동 수집(수기 입력란 제거). `storage.rules`는 레거시 읽기 전용으로 축소
+- [x] **버전 소유권 이관** — 대시보드 자동 bump·`## 변경 이력` 표 주입·`v0.1.0` 강제·머지 승격 전부 폐기. 헤더 `**버전**` 값을 읽기만 하고, 남기는 건 재검토 diff용 본문 스냅샷뿐. MAJOR/MINOR/PATCH는 semver 비교로 파생 표시
+- [x] **머지 타겟 브랜치 변경** — base `develop` 고정 → 이슈별 `<prefix>/<번호>-<slug>/base`. head도 `docs/spec-{slug}-{version}` → `<prefix>/<번호>-<slug>/spec`. `listBaseBranches`(Functions→GitHub API) 신설 + 업로드 모달 셀렉트 + `features.baseBranch` 필드 + 보안규칙 create 가드
+- [x] 품질 게이트 — 템플릿 자리표시자 잔여는 하드 차단. ~~헤더 `**상태**: CREATED`가 아니면 업로드 차단 · `[TBD]` 잔여 하드 차단~~ → **경고로 완화**: DRAFT·`[TBD]`는 디자이너 검수가 필요한 상태이므로 올라와야 한다. 상세 패널 안내 + spec PR 체크리스트 미체크로 추적 ([validation.md](../design/validation.md) §1)
+- [ ] 신 파이프라인 실 e2e (base 브랜치 선택 → spec PR → base 머지) — 코드 완비, 실 검증 대기
+
 ## P3 · 보안 규칙 강제 — 완료 (2026-07-06)
 - [x] `firestore.rules` 실 강제: 역할별 전이 허용목록(`devTransitionOk`/`desTransitionOk`) · 필드 잠금(prNumber/prUrl) · `spec_in_review` read-only · 위조 차단(`pr_open`/`merged`/`pr_closed`는 Functions 전용)
 - [x] 자동 버저닝: 대시보드가 `versionLog` 소유 → 전이 이벤트에서 bump(init/patch/minor/major/graduate) → `## 변경 이력` 표 자동 주입(specBody·PR 커밋 미러)
@@ -110,7 +123,7 @@
 - [x] revoke UI / 403 권한부족 우아한 폴백 (5.1)
 - [x] 라이브 마크다운 프리뷰 (업로드 편집기, 이미지 렌더)
 - [x] 토큰 평문 → Secret Manager 마이그레이션 (5.1 운영 전환) — **완료(2026-07-08 검증)**: functions/token-store.js(`storeGithubToken` callable + 레거시 자동 이관) + rules 평문 재유입 차단 + IAM/배포. 재로그인 실호출 성공·필드 미재생성 확인. 미로그인 팀원의 잔여 평문 필드는 다음 PR 생성 시 자동 이관(또는 콘솔 수동 삭제) ([infra-playbook E](infra-playbook.md))
-- [ ] merged 경로 실 머지 e2e (더미 PR develop 머지)
+- [ ] merged 경로 실 머지 e2e (더미 PR을 base 브랜치에 머지)
 - [ ] `reviews` 배열 → 서브컬렉션 전환 (선택) — **P5.1(아래)로 편입**
 
 ---
@@ -127,5 +140,5 @@
 
 ## 의존 / 비고
 - 생성 스킬·검수 에이전트 정의는 **Mino-Android 레포 `.claude/` 소관** ([mino_android.md]) — 본 레포는 사용법 안내 + 산출물 업로드만.
-- 대시보드 검증(S1–S6) = `spec-reviewer` 체크포인트와 동일 기준 (2차 방어선).
+- 대시보드 검증(S1–S6) = 산출물의 **구조** 재확인 (2차 방어선). 품질 1차는 스킬의 체크리스트(PASS → 헤더 `상태: CREATED`). 미완성(DRAFT·`[TBD]`)은 차단 대상이 아니라 검수 대상이다.
 - 7장 의존 순서: `A(App 골격) → B(Firebase+Functions) → C(Webhook 역기입) → D(레포 CODEOWNERS)`.

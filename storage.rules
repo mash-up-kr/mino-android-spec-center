@@ -1,20 +1,14 @@
 rules_version = '2';
-// MASC Storage 보안규칙 — docs/data-model.md §2,§3
-// spec 화면 이미지: features/{featureId}/assets/{file}
+// MASC Storage 보안규칙
+// spec 이미지(assets) 업로드는 폐기됐다 — 신 템플릿은 화면 근거를 Figma 노드 URL 로 적고,
+// 대시보드는 spec.md 본문만 다룬다. 남은 레거시 파일은 읽기만 허용하고 쓰기는 막는다.
 service firebase.storage {
   match /b/{bucket}/o {
     function signedIn() { return request.auth != null; }
-    function myRole() {
-      return firestore.get(/databases/(default)/documents/users/$(request.auth.uid)).data.role;
-    }
-    function isDeveloper() { return signedIn() && myRole() == 'developer'; }
 
     match /features/{featureId}/assets/{fileName} {
-      allow read: if signedIn();
-      // 업로드: 개발자, 이미지, 10MB 이하
-      allow write: if isDeveloper()
-        && request.resource.size < 10 * 1024 * 1024
-        && request.resource.contentType.matches('image/.*');
+      allow read: if signedIn();  // 과거 업로드분 열람용
+      allow write: if false;      // 신규 업로드 경로 없음
     }
   }
 }

@@ -2,15 +2,20 @@
  * MASC Cloud Functions (M3·M4) — GitHub 관련 최소 백엔드
  * ----------------------------------------------------------------------
  *  1) githubOAuthExchange — OAuth code → user access token 교환
- *  2) createSpecPR        — 브랜치 생성 → spec/plan/assets 커밋 → PR 생성 (개발자 명의)
- *  3) githubWebhook       — pull_request 수신(HMAC 검증) → Firestore status 역동기화
- *  4) notifyOnFeatureWrite — 상태 전이 → Discord 알림 (notify.js, P5.2)
+ *  2) listBaseBranches    — `/issue` 가 만든 `…/base` 브랜치 목록 조회
+ *  3) createSpecPR        — `…/spec` 브랜치 생성 → spec.md 커밋 → base 브랜치로 PR (개발자 명의)
+ *  4) githubWebhook       — pull_request 수신(HMAC 검증) → Firestore status 역동기화
+ *  5) notifyOnFeatureWrite — 상태 전이 → Discord 알림 (notify.js, P5.2)
  *
  * 시크릿: GITHUB_CLIENT_ID / GITHUB_CLIENT_SECRET / GITHUB_WEBHOOK_SECRET / DISCORD_WEBHOOK_URL
  *   firebase functions:secrets:set <NAME> 로 등록 (docs/ops/infra-playbook.md B-2).
  * 사용자 GitHub 토큰: Secret Manager `user-gh-token-{uid}` (token-store.js).
  *   Firestore 평문 저장 폐지 — 레거시 필드는 첫 사용 시 자동 이관.
- * 대상 레포: mash-up-kr/Team-MINO-Android · base 브랜치: develop
+ *
+ * 대상 레포: mash-up-kr/Team-MINO-Android
+ * base 브랜치: `develop` 고정이 아니라 이슈별 `<prefix>/<이슈번호>-<slug>/base`.
+ *   근거: Mino-Android `docs/conventions/base-branch.md` — spec/plan/task 하위 작업은
+ *   develop 이 아니라 이슈 base 브랜치에서 분기하고 그리로 PR 한다.
  */
 const crypto = require('crypto');
 const { onRequest, onCall, HttpsError } = require('firebase-functions/v2/https');
@@ -35,10 +40,13 @@ const GITHUB_WEBHOOK_SECRET = defineSecret('GITHUB_WEBHOOK_SECRET');
 
 const OWNER = 'mash-up-kr';
 const REPO = 'Team-MINO-Android';
-const BASE = 'develop';
-const BUCKET = 'mino-spec-center.firebasestorage.app'; // spec 이미지 Storage 버킷
+// `/issue` 산출 브랜치 형태: <prefix>/<이슈번호>-<slug>/base (branch-naming.md)
+const BASE_BRANCH_RE = /^[a-z]+\/(\d+)-([a-z0-9-]+)\/base$/;
 // GitHub Pages 도메인 ↔ Functions 도메인 분리 → CORS 허용 (PRD 5장)
 const CORS_ORIGIN = 'https://mash-up-kr.github.io';
+
+// base 브랜치(`…/base`) → spec 작업 브랜치(`…/spec`). base-branch.md 권장 네이밍.
+const specBranchOf = (base) => String(base || '').replace(/\/base$/, '/spec');
 
 // ===================== 1) OAuth 토큰 교환 =====================
 exports.githubOAuthExchange = onRequest(
@@ -67,8 +75,38 @@ exports.githubOAuthExchange = onRequest(
   }
 );
 
-// ===================== 2) PR 생성 =====================
+// ===================== 2) base 브랜치 목록 =====================
+// data: {}. `/issue` 가 만든 `<prefix>/<이슈번호>-<slug>/base` 브랜치를 최신 커밋 순으로 반환.
+// 업로드 모달의 대상 브랜치 셀렉트를 채운다.
+exports.listBaseBranches = onCall(async (request) => {
+  const uid = request.auth && request.auth.uid;
+  if (!uid) throw new HttpsError('unauthenticated', '로그인이 필요합니다.');
+  const userSnap = await db.doc(`users/${uid}`).get();
+  const user = userSnap.data() || {};
+  const token = await getUserToken(uid, user);
+  if (!token) throw new HttpsError('permission-denied', 'GITHUB_AUTH: GitHub 연결이 없습니다(토큰 없음). 다시 로그인하세요.');
+
+  const octokit = new Octokit({ auth: token });
+  try {
+    // 브랜치가 많아질 수 있어 페이지네이션으로 전부 훑고 `…/base` 만 남긴다.
+    const all = await octokit.paginate(octokit.repos.listBranches, {
+      owner: OWNER, repo: REPO, per_page: 100,
+    });
+    const matched = all
+      .map((b) => ({ b, m: BASE_BRANCH_RE.exec(b.name) }))
+      .filter((x) => x.m)
+      .map((x) => ({ name: x.b.name, issue: Number(x.m[1]), slug: x.m[2], sha: x.b.commit && x.b.commit.sha }));
+    // 이슈 번호 내림차순 = 사실상 최신순 (커밋 날짜 조회는 브랜치당 1콜이라 생략)
+    matched.sort((a, b) => b.issue - a.issue);
+    return { branches: matched };
+  } catch (e) {
+    throw githubError(e, 'base 브랜치 조회 실패');
+  }
+});
+
+// ===================== 3) PR 생성 =====================
 // data: { featureId }. 호출자(개발자)의 githubToken 으로 개발자 명의 PR.
+// head = <prefix>/<N>-<slug>/spec (base 브랜치에서 분기) · base = feature.baseBranch
 exports.createSpecPR = onCall(async (request) => {
   const uid = request.auth && request.auth.uid;
   if (!uid) throw new HttpsError('unauthenticated', '로그인이 필요합니다.');
@@ -83,47 +121,47 @@ exports.createSpecPR = onCall(async (request) => {
   const user = userSnap.data() || {};
   const f = featSnap.data();
   if (user.role !== 'developer') throw new HttpsError('permission-denied', '개발자만 PR 생성');
-  if (f.status !== 'plan_drafted') throw new HttpsError('failed-precondition', 'plan_drafted 상태에서만 PR 생성');
+  if (f.status !== 'spec_approved') throw new HttpsError('failed-precondition', 'spec_approved 상태에서만 PR 생성');
+  const baseBranch = f.baseBranch;
+  if (!baseBranch || !BASE_BRANCH_RE.test(baseBranch)) {
+    throw new HttpsError('failed-precondition',
+      'base 브랜치가 없거나 형식이 잘못됐습니다(<prefix>/<이슈번호>-<slug>/base). /issue 로 생성한 브랜치를 spec 수정에서 선택하세요.');
+  }
   const token = await getUserToken(uid, user);
   if (!token) throw new HttpsError('permission-denied', 'GITHUB_AUTH: GitHub 연결이 없습니다(토큰 없음). 다시 로그인하세요.');
 
   const octokit = new Octokit({ auth: token });
   const slug = f.slug;
-  const version = f.specVersion || 'v0.1.0';
-  const branch = `docs/spec-${slug}-${version}`;
+  const version = f.specVersion || '';
+  const branch = specBranchOf(baseBranch);
   const dir = `docs/specs/${slug}`;
 
   try {
-    // ① base develop 의 최신 커밋 → 새 브랜치 ref 생성
-    const baseRef = await octokit.git.getRef({ owner: OWNER, repo: REPO, ref: `heads/${BASE}` });
-    const baseSha = baseRef.data.object.sha;
+    // ① base 브랜치의 최신 커밋 → spec 작업 브랜치 ref 생성 (develop 아님)
+    let baseSha;
+    try {
+      const baseRef = await octokit.git.getRef({ owner: OWNER, repo: REPO, ref: `heads/${baseBranch}` });
+      baseSha = baseRef.data.object.sha;
+    } catch (e) {
+      if (e.status === 404) {
+        throw new HttpsError('failed-precondition',
+          `base 브랜치 '${baseBranch}' 가 원격에 없습니다. /issue 로 다시 만들거나 spec 수정에서 다른 브랜치를 선택하세요.`);
+      }
+      throw e;
+    }
     await octokit.git.createRef({ owner: OWNER, repo: REPO, ref: `refs/heads/${branch}`, sha: baseSha }).catch((e) => {
       if (e.status !== 422) throw e; // 이미 존재하면 재사용
     });
 
-    // ② 파일 커밋 (Contents API). spec.md / plan.md
-    // 변경 이력 표는 대시보드 versionLog 로 자동 생성/주입(개발자 수기 표 대체).
-    const specBody = injectVersionHistory(f.specBody, f.versionLog);
-    await putFile(octokit, branch, `${dir}/spec.md`, specBody, `docs(spec): ${slug} ${version}`);
-    if (f.planBody) await putFile(octokit, branch, `${dir}/plan.md`, f.planBody, `docs(plan): ${slug} ${version}`);
+    // ② spec.md 커밋 (Contents API). plan.md·assets 커밋은 폐기 —
+    //    plan/task 는 같은 base 아래 별도 하위 작업 브랜치가 담당한다.
+    await putFile(octokit, branch, `${dir}/spec.md`, f.specBody, `docs(spec): ${slug} ${version}`.trim());
 
-    // ②-b assets 이미지: Storage features/{id}/assets/* → ${dir}/assets/ 커밋
-    const assets = Array.isArray(f.assets) ? f.assets : [];
-    for (const a of assets) {
-      if (!a || !a.name || !a.storagePath) continue; // 업로드 안 된(경로없는) asset은 건너뜀
-      try {
-        const [buf] = await admin.storage().bucket(BUCKET).file(a.storagePath).download();
-        await putBinary(octokit, branch, `${dir}/assets/${a.name}`, buf, `docs(spec): ${slug} asset ${a.name}`);
-      } catch (e) {
-        console.error('asset commit 실패:', a.name, e.message); // 개별 실패는 PR 생성을 막지 않음
-      }
-    }
-
-    // ③ PR 생성
+    // ③ PR 생성 — base 는 develop 이 아니라 이슈 base 브랜치
     const pr = await octokit.pulls.create({
-      owner: OWNER, repo: REPO, base: BASE, head: branch,
-      title: `docs(spec): ${slug} ${version}`,
-      body: prTemplate(f),
+      owner: OWNER, repo: REPO, base: baseBranch, head: branch,
+      title: `docs(spec): ${slug} ${version}`.trim(),
+      body: prTemplate(f, baseBranch, branch),
     });
     await octokit.issues.addLabels({ owner: OWNER, repo: REPO, issue_number: pr.data.number, labels: ['spec'] }).catch(() => {});
     // 작업자(개발자)를 PR 담당자(assignee)로 지정 — 실패해도 PR은 유지
@@ -137,6 +175,7 @@ exports.createSpecPR = onCall(async (request) => {
     });
     return { prNumber: pr.data.number, prUrl: pr.data.html_url };
   } catch (e) {
+    if (e instanceof HttpsError) throw e; // 전제조건 위반은 그대로 전달
     throw githubError(e, 'PR 생성 실패');
   }
 });
@@ -152,7 +191,7 @@ function githubError(e, prefix) {
   return new HttpsError('internal', `${prefix}: ${e && e.message}`);
 }
 
-// ============ 2b) PR close (무효화 연쇄) ============
+// ============ 3b) PR close (무효화 연쇄) ============
 // data: { featureId, prNumber, reason }. 개발자 토큰으로 열린 spec PR 을 닫는다.
 // 호출 전 클라이언트가 Firestore prNumber 를 null 로 비워둔다 → close 웹훅이 매칭 실패해
 // pr_closed 로 덮어쓰지 않고 무효화 결과(spec_draft)가 유지된다.
@@ -170,13 +209,13 @@ exports.closeSpecPR = onCall(async (request) => {
   if (user.role !== 'developer') throw new HttpsError('permission-denied', '개발자만 PR close');
   const token = await getUserToken(uid, user);
   if (!token) throw new HttpsError('permission-denied', 'GITHUB_AUTH: GitHub 연결이 없습니다(토큰 없음). 다시 로그인하세요.');
-  const slug = (featSnap.exists && featSnap.data().slug) || '';
+  const baseBranch = (featSnap.exists && featSnap.data().baseBranch) || '';
 
   const octokit = new Octokit({ auth: token });
   try {
     const pr = await octokit.pulls.get({ owner: OWNER, repo: REPO, pull_number: prNumber });
-    // 안전장치: 이 PR 이 정말 해당 spec 브랜치인지 확인
-    if (slug && !pr.data.head.ref.startsWith(`docs/spec-${slug}-`)) {
+    // 안전장치: 이 PR 이 정말 해당 feature 의 spec 브랜치(base→spec)인지 확인
+    if (baseBranch && pr.data.head.ref !== specBranchOf(baseBranch)) {
       throw new HttpsError('failed-precondition', 'PR 브랜치가 이 spec 과 일치하지 않습니다.');
     }
     if (pr.data.state === 'closed') return { closed: true, already: true };
@@ -205,97 +244,32 @@ async function putFile(octokit, branch, path, content, message) {
   });
 }
 
-// 바이너리(이미지) 커밋 — Buffer 를 그대로 base64 로 올린다.
-async function putBinary(octokit, branch, path, buffer, message) {
-  let sha;
-  try {
-    const cur = await octokit.repos.getContent({ owner: OWNER, repo: REPO, path, ref: branch });
-    sha = cur.data.sha;
-  } catch (e) { if (e.status !== 404) throw e; }
-  await octokit.repos.createOrUpdateFileContents({
-    owner: OWNER, repo: REPO, path, message, branch, sha,
-    content: Buffer.from(buffer).toString('base64'),
-  });
-}
-
-// ===================== 자동 버저닝 (js/version.js 서버측 미러) =====================
-const VER_INIT = 'v0.1.0';
-const VER_REASONS = {
-  init: '최초 작성', patch: '반려 반영 후 재검토 요청',
-  minor: '승인 후 수정 — 무효화 (재검토 필요)', major: '머지된 스펙 수정 — 무효화',
-  graduate: '최초 머지 (릴리스)',
-};
-function parseVer(v) {
-  const m = /^v(\d+)\.(\d+)\.(\d+)$/.exec(String(v || '').trim());
-  return m ? [+m[1], +m[2], +m[3]] : null;
-}
-function bumpVersion(current, level) {
-  const a = parseVer(current) || parseVer(VER_INIT);
-  if (level === 'patch') return `v${a[0]}.${a[1]}.${a[2] + 1}`;
-  if (level === 'minor') return `v${a[0]}.${a[1] + 1}.0`;
-  if (level === 'major') return `v${a[0] + 1}.0.0`;
-  if (level === 'graduate') return a[0] === 0 ? 'v1.0.0' : `v${a[0]}.${a[1]}.${a[2]}`;
-  return `v${a[0]}.${a[1]}.${a[2]}`;
-}
-function versionLogEntry(version, event, body) {
-  return {
-    version, level: event, reason: VER_REASONS[event] || '',
-    at: new Date().toISOString().slice(0, 10), body: body == null ? '' : body,
-  };
-}
-// 본문에서 `## 변경 이력` 섹션 제거 — js/version.js stripHistory 미러(스냅샷용)
-function stripHistory(body) {
-  const lines = String(body || '').replace(/\r\n/g, '\n').split('\n');
-  const isHist = (l) => /^##\s+(?:\d+\.\s*)?변경\s*이력\s*$/.test(l);
-  const start = lines.findIndex(isHist);
-  if (start < 0) return String(body || '').trim();
-  let end = lines.length;
-  for (let i = start + 1; i < lines.length; i++) { if (/^##\s+/.test(lines[i])) { end = i; break; } }
-  return lines.slice(0, start).concat(lines.slice(end)).join('\n').replace(/\n{3,}/g, '\n\n').trim();
-}
-
-// versionLog → 마크다운 `## 변경 이력` 표(버전=1열, 최신=마지막 행: spec-parse 규약).
-function buildHistoryTable(versionLog) {
-  const rows = (versionLog || []).map((e) =>
-    `| ${e.version} | ${e.at || ''} | ${String(e.reason || '').replace(/\|/g, '/')} |`);
-  return ['| 버전 | 날짜 | 변경 내용 |', '|------|------|-----------|', ...rows].join('\n');
-}
-// spec.md 의 `## 변경 이력` 섹션을 versionLog 기반 표로 교체(없으면 말미에 추가). 번호 접두사 보존.
-function injectVersionHistory(specBody, versionLog) {
-  if (!versionLog || !versionLog.length) return specBody;
-  const table = buildHistoryTable(versionLog);
-  const lines = String(specBody).replace(/\r\n/g, '\n').split('\n');
-  const isHist = (l) => /^##\s+(?:\d+\.\s*)?변경\s*이력\s*$/.test(l);
-  const start = lines.findIndex(isHist);
-  if (start < 0) {
-    return String(specBody).replace(/\n*$/, '') + `\n\n## 변경 이력\n\n${table}\n`;
-  }
-  let end = lines.length;
-  for (let i = start + 1; i < lines.length; i++) { if (/^##\s+/.test(lines[i])) { end = i; break; } }
-  const prefixMatch = lines[start].match(/^##\s+(\d+\.\s*)?/);
-  const prefix = prefixMatch && prefixMatch[1] ? prefixMatch[1] : '';
-  const before = lines.slice(0, start).join('\n').replace(/\n*$/, '');
-  const after = lines.slice(end).join('\n').replace(/^\n*/, '');
-  let out = `${before}\n\n## ${prefix}변경 이력\n\n${table}\n`;
-  if (after) out += `\n${after}`;
-  return out;
-}
-
-function prTemplate(f) {
+function prTemplate(f, baseBranch, headBranch) {
+  const issue = (BASE_BRANCH_RE.exec(baseBranch || '') || [])[1];
+  // DRAFT·[TBD] 스펙도 업로드·컨펌이 가능하므로 체크 상태를 실제 헤더 값으로 반영한다.
+  const created = f.specStatus === 'CREATED';
+  const tbd = ((f.specBody || '').match(/\[TBD\b[^\]]*\]/g) || []).length;
   return [
     `## 스펙 PR — ${f.title}`,
     '',
     '### 얼라인 체크리스트',
     '- [x] spec 컨펌됨 (디자이너 승인)',
-    `- [${f.planBody ? 'x' : ' '}] plan 작성됨`,
-    `- [ ] 담당자 확인`,
+    created
+      ? '- [x] 품질 체크리스트 통과 (로컬 `/mino-spec`, 헤더 상태 `CREATED`)'
+      : `- [ ] 품질 체크리스트 통과 — 헤더 상태 \`${f.specStatus || '미상'}\` (머지 전 \`/mino-spec\`으로 확정 필요)`,
+    tbd ? `- [ ] 미해소 \`[TBD]\` ${tbd}건 확정` : '',
+    '- [ ] 담당자 확인',
     '',
-    `> slug: \`${f.slug}\` · 버전: \`${f.specVersion || ''}\``,
+    `> \`${headBranch}\` → \`${baseBranch}\``,
+    `> slug: \`${f.slug}\` · 버전: \`${f.specVersion || ''}\` · 기준 PRD: \`${f.prdVersion || '없음'}\``,
+    issue ? `> 관련 이슈: #${issue}` : '',
     f.figmaSources && f.figmaSources.length ? `> 출처: ${f.figmaSources.join(' , ')}` : '',
-  ].join('\n');
+    '',
+    '머지 후 같은 base 브랜치에서 `/mino-plan` · `/mino-task` 를 이어서 진행합니다.',
+  ].filter((l) => l !== '').join('\n');
 }
 
-// ===================== 3) Webhook 역동기화 =====================
+// ===================== 4) Webhook 역동기화 =====================
 exports.githubWebhook = onRequest(
   { secrets: [GITHUB_WEBHOOK_SECRET] },
   async (req, res) => {
@@ -313,23 +287,11 @@ exports.githubWebhook = onRequest(
 
     const q = await db.collection('features').where('prNumber', '==', pr.number).limit(1).get();
     if (q.empty) return res.status(204).send();
-    const doc = q.docs[0];
-    const fdata = doc.data() || {};
-    const patch = {
+    // 버전은 `/mino-spec` 스킬 소유 — 머지 시 대시보드가 bump 하지 않는다(상태만 반영).
+    await q.docs[0].ref.update({
       status: pr.merged ? 'merged' : 'pr_closed',
       updatedAt: admin.firestore.FieldValue.serverTimestamp(),
-    };
-    // 최초 머지 → 0.x 를 v1.0.0 으로 승격(코드 착지 = 릴리스). syncFromWebhook(프론트 테스트)과 동일.
-    if (pr.merged) {
-      const nv = bumpVersion(fdata.specVersion, 'graduate');
-      if (nv !== fdata.specVersion) {
-        patch.specVersion = nv;
-        const resultLog = (Array.isArray(fdata.versionLog) ? fdata.versionLog : []).concat(versionLogEntry(nv, 'graduate', stripHistory(fdata.specBody)));
-        patch.versionLog = resultLog;
-        patch.specBody = injectVersionHistory(fdata.specBody, resultLog);
-      }
-    }
-    await doc.ref.update(patch);
+    });
     return res.status(200).send('ok');
   }
 );
