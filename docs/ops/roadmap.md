@@ -114,6 +114,21 @@
 - [x] 품질 게이트 — 템플릿 자리표시자 잔여는 하드 차단. ~~헤더 `**상태**: CREATED`가 아니면 업로드 차단 · `[TBD]` 잔여 하드 차단~~ → **경고로 완화**: DRAFT·`[TBD]`는 디자이너 검수가 필요한 상태이므로 올라와야 한다. 상세 패널 안내 + spec PR 체크리스트 미체크로 추적 ([validation.md](../design/validation.md) §1)
 - [ ] 신 파이프라인 실 e2e (base 브랜치 선택 → spec PR → base 머지) — 코드 완비, 실 검증 대기
 
+## P7 · `/mino-spec` 산출물 2종 업로드 — 완료 (2026-08-10)
+
+> `/mino-spec` 은 `spec.md` 와 `quality/spec-checklist.md` 를 함께 낸다. 둘 다 대시보드에 올리고 둘 다 PR 에 실리되,
+> **디자이너 검수 대상은 spec 하나**로 유지한다. 업로드 방식은 붙여넣기 → **파일 첨부**로 전환.
+> 근거: `.claude/skills/mino-spec/SKILL.md` §2·§5.1 · `mino-sdd/template/spec-checklist-template.md`
+
+- [x] **데이터 모델** — `checklistBody`·`checklistStatus`·`checklistTargetVersion` 신설, `versionLog[].checklistBody` 스냅샷 추가 ([data-model.md](../design/data-model.md) v3→v3.1)
+- [x] **체크리스트 검증 C1–C7** — H1·헤더 메타·상태 어휘·필수 H2 4개·체크박스·자리표시자는 하드, `FAILED`/미체크/버전 불일치는 경고. C7은 `major.minor` 까지만 비교(템플릿 예시가 `v1.0` 2자리라 엄격 비교 시 오탐) ([validation.md](../design/validation.md) §1-1)
+- [x] **붙여넣기 편집창 폐기** — 업로드는 첨부 슬롯 2개뿐. 드롭한 파일은 본문 H1으로 자동 분류(파일명보다 H1 우선), 판별 실패 시 슬롯에서 직접 지정. 프리뷰는 문서별 탭으로 유지
+- [x] **검수 범위 고정** — 체크리스트 뷰어는 항상 읽기 전용(💬 앵커·승인/반려 없음). 보안규칙 `desContentLocked` 에 체크리스트 3필드 추가 → 디자이너가 값 변경 불가
+- [x] **업로드 필수화** — 신규 생성 시 체크리스트 누락이면 클라이언트(`saveSpec`)와 `allow create` 양쪽에서 차단. 기존 feature 수정 시 미첨부면 직전 본문 유지(레거시 lazy migration)
+- [x] **PR 2파일 커밋** — `docs/specs/{slug}/spec.md` + `.../quality/spec-checklist.md`. PR 본문에 포함 문서 목록 + 실제 체크리스트 상태·통과 개수 반영(기존엔 spec 헤더 `CREATED` 로 추정하던 것을 교체)
+- [x] mock 모드 e2e 스모크(첨부→자동분류→검증→저장→상세 반영) 통과
+- [ ] 실 e2e — 실제 `/mino-spec` 산출물로 업로드 → 컨펌 → PR 2파일 확인 (Functions·rules 재배포 필요)
+
 ## P3 · 보안 규칙 강제 — 완료 (2026-07-06)
 - [x] `firestore.rules` 실 강제: 역할별 전이 허용목록(`devTransitionOk`/`desTransitionOk`) · 필드 잠금(prNumber/prUrl) · `spec_in_review` read-only · 위조 차단(`pr_open`/`merged`/`pr_closed`는 Functions 전용)
 - [x] 자동 버저닝: 대시보드가 `versionLog` 소유 → 전이 이벤트에서 bump(init/patch/minor/major/graduate) → `## 변경 이력` 표 자동 주입(specBody·PR 커밋 미러)
@@ -140,5 +155,6 @@
 
 ## 의존 / 비고
 - 생성 스킬·검수 에이전트 정의는 **Mino-Android 레포 `.claude/` 소관** ([mino_android.md]) — 본 레포는 사용법 안내 + 산출물 업로드만.
-- 대시보드 검증(S1–S6) = 산출물의 **구조** 재확인 (2차 방어선). 품질 1차는 스킬의 체크리스트(PASS → 헤더 `상태: CREATED`). 미완성(DRAFT·`[TBD]`)은 차단 대상이 아니라 검수 대상이다.
+- 대시보드 검증(spec S1–S6 · 체크리스트 C1–C7) = 산출물의 **구조** 재확인 (2차 방어선). 품질 1차는 스킬의 체크리스트(PASS → 헤더 `상태: CREATED`). 미완성(DRAFT·`[TBD]`·체크리스트 `FAILED`)은 차단 대상이 아니라 검수 대상이다.
+- `/mino-spec` §6 완료 보고는 파일 경로 2개를 알려주는 데서 끝난다 — "둘 다 대시보드에 첨부" 안내를 스킬에 한 줄 추가하면 체크리스트 누락 경로가 원천 차단된다. **Mino-Android 레포 수정 사항이라 미반영**.
 - 7장 의존 순서: `A(App 골격) → B(Firebase+Functions) → C(Webhook 역기입) → D(레포 CODEOWNERS)`.

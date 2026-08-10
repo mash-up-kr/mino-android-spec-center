@@ -6,7 +6,9 @@
  * 1차 방어선은 로컬 `mino-spec` 스킬의 품질 체크리스트(상태 CREATED = PASS).
  * 다만 미완성 신호(상태 DRAFT · `[TBD]` 잔여)는 **차단하지 않고 경고**한다 —
  * 오히려 디자이너 검수가 필요한 상태이므로 대시보드에 올라오는 것이 이 도구의 목적이다.
- * validateSpec(body) → { ok, errors: [{code,msg}], warnings: [{code,msg}], meta }
+ * validateSpec(body)      → { ok, errors: [{code,msg}], warnings: [{code,msg}], meta }
+ * validateChecklist(body) → 같은 형태 (C1–C7). 기준 템플릿: `mino-sdd/template/spec-checklist-template.md`
+ *   체크리스트도 같은 원칙이다 — 골격은 하드 차단, 미통과(FAILED/DRAFT·미체크 항목)는 경고.
  */
 (function () {
   const S = window.MASCSpec;
@@ -19,6 +21,16 @@
   const PLACEHOLDERS = [
     '[FEATURE NAME]', '{SPEC_DIR}', '[날짜]', '[DRAFT, CREATED]', '$ARGUMENTS',
     '[간단한 제목]', '[필요에 따라 유저 플로우를 추가]',
+  ];
+
+  // C4: 체크리스트 필수 H2 4개 (순서·핵심 제목). 괄호 영문 병기는 coreTitle 이 벗긴다.
+  const REQUIRED_CHECKLIST_H2 = ['스펙 품질', '요구사항 완전성', '스펙 완성도', '비고'];
+  // C3: 체크리스트 헤더 상태 통제 어휘. FAILED/DRAFT 도 업로드 가능(경고).
+  const CHECKLIST_STATUSES = ['PASS', 'FAILED', 'DRAFT'];
+  // C6: 체크리스트 템플릿 자리표시자
+  const CHECKLIST_PLACEHOLDERS = [
+    '[FEATURE NAME]', '[날짜]', '[PASS/FAILED/DRAFT]', '[spec.md 링크]',
+    '[해당 spec 버전 (예 : v1.0)]',
   ];
 
   function validateSpec(body) {
@@ -120,5 +132,91 @@
     return { ok: errors.length === 0, errors, warnings, meta };
   }
 
-  window.MASCValidate = { validateSpec, REQUIRED_H2, SPEC_STATUSES, PLACEHOLDERS };
+  // ===================== 품질 체크리스트 (C1–C7) =====================
+
+  // 버전 비교는 major.minor 까지만 — 템플릿 예시가 `v1.0`(2자리)인데 spec 헤더는 `1.0.0`(3자리)라
+  // 엄격 비교하면 정상 산출물이 전부 걸린다. PATCH 차이는 오탐이므로 무시한다.
+  const majorMinor = (v) => {
+    const m = /^v?(\d+)\.(\d+)/.exec(String(v || '').trim());
+    return m ? `${m[1]}.${m[2]}` : null;
+  };
+
+  /**
+   * @param body      spec-checklist.md 원문
+   * @param specMeta  같이 업로드되는 spec 의 메타(MASCSpec.parseMeta 결과). 없으면 C7 생략.
+   */
+  function validateChecklist(body, specMeta) {
+    const errors = [];
+    const warnings = [];
+    const add = (code, msg) => errors.push({ code, msg });
+    const warn = (code, msg) => warnings.push({ code, msg });
+    const meta = S.parseChecklistMeta(body);
+
+    // ── C1 — H1 제목 ──
+    const h1 = (S.headings(body).find((h) => h.level === 1) || {}).raw;
+    if (!h1) {
+      add('C1', 'H1 제목(`# Spec 품질 체크리스트: {기능명}`)이 없습니다.');
+    } else if (!/^Spec\s*품질\s*체크리스트\s*[:：]/i.test(h1)) {
+      add('C1', `H1 "${h1}" 형식 오류 — \`# Spec 품질 체크리스트: {기능명}\` 이어야 합니다.`);
+    }
+
+    // ── C2 — 헤더 메타 (작성일 · 대상 스펙) ──
+    const created = S.headerField(body, '작성일');
+    if (!created) add('C2', '헤더에 `**작성일**` 이 없습니다.');
+    else if (!/^\d{4}-\d{2}-\d{2}$/.test(created)) add('C2', `작성일 "${created}" 형식 오류 — YYYY-MM-DD 여야 합니다.`);
+    if (!meta.targetRaw) {
+      add('C2', '헤더에 `**대상 스펙**: [spec.md](../spec.md) - {버전}` 이 없습니다.');
+    } else if (!meta.targetVersion) {
+      add('C2', `대상 스펙 "${meta.targetRaw}" 에서 spec 버전을 찾지 못했습니다 — \`[spec.md](../spec.md) - 1.0.0\` 형식이어야 합니다.`);
+    }
+
+    // ── C3 — 상태 (FAILED/DRAFT 는 경고) ──
+    if (!meta.status) {
+      add('C3', '헤더에 `**상태**` 가 없습니다.');
+    } else if (!CHECKLIST_STATUSES.includes(meta.status)) {
+      add('C3', `상태 "${meta.status}" 무효 — ${CHECKLIST_STATUSES.join('/')} 중 하나여야 합니다.`);
+    } else if (meta.status !== 'PASS') {
+      warn('C3', `체크리스트 상태가 \`${meta.status}\` 입니다 — 품질 검증을 통과하지 못한 스펙으로 업로드됩니다.`);
+    }
+
+    // ── C4 — 필수 H2 4개 (순서·제목 일치) ──
+    const got = S.h2List(body).map((h) => h.core);
+    let cursor = 0;
+    const missing = [];
+    REQUIRED_CHECKLIST_H2.forEach((title) => {
+      const idx = got.indexOf(title, cursor);
+      if (idx < 0) missing.push(title);
+      else cursor = idx + 1;
+    });
+    if (missing.length) {
+      add('C4', `필수 H2 누락/순서 오류: ${missing.join(' · ')} (${REQUIRED_CHECKLIST_H2.join(' → ')} 순서여야 함).`);
+    }
+
+    // ── C5 — 체크박스 항목 (미체크는 경고) ──
+    if (!meta.total) {
+      add('C5', '`- [ ]` / `- [x]` 형식의 검증 항목이 하나도 없습니다.');
+    } else if (meta.checked < meta.total) {
+      warn('C5', `미통과 항목 ${meta.total - meta.checked}건 (${meta.checked}/${meta.total} 통과) — 검수에서 확인이 필요합니다.`);
+    }
+
+    // ── C6 — 자리표시자 잔여 ──
+    const left = CHECKLIST_PLACEHOLDERS.filter((p) => body.indexOf(p) >= 0);
+    if (left.length) add('C6', `치환되지 않은 템플릿 자리표시자: ${left.join(' · ')}`);
+
+    // ── C7 — spec 버전과 대조 (경고) ──
+    if (specMeta && specMeta.specVersion && meta.targetVersion) {
+      const a = majorMinor(specMeta.specVersion), b = majorMinor(meta.targetVersion);
+      if (a && b && a !== b) {
+        warn('C7', `체크리스트 대상 버전(${meta.targetVersion})이 spec 버전(${specMeta.specVersion})과 다릅니다 — 이전 버전 기준 체크리스트일 수 있습니다.`);
+      }
+    }
+
+    return { ok: errors.length === 0, errors, warnings, meta };
+  }
+
+  window.MASCValidate = {
+    validateSpec, validateChecklist,
+    REQUIRED_H2, SPEC_STATUSES, PLACEHOLDERS,
+    REQUIRED_CHECKLIST_H2, CHECKLIST_STATUSES, CHECKLIST_PLACEHOLDERS,
+  };
 })();

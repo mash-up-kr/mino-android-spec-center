@@ -76,13 +76,14 @@
         featureId: '', slug: '', title: '', status: 'spec_draft',
         specVersion: '', specStatus: '', prdVersion: '', baseBranch: '', figmaSources: [],
         prNumber: null, prUrl: null, specBody: '',
+        checklistBody: '', checklistStatus: '', checklistTargetVersion: '',
         reviews: [], versionLog: [], createdBy: '', createdAt: today(), updatedAt: today(),
       };
     },
 
-    /** spec 업로드/생성 또는 수정. validate는 app.js(UI)에서 선행. */
+    /** spec + 품질 체크리스트 업로드/생성 또는 수정. validate는 app.js(UI)에서 선행. */
     saveSpec(input) {
-      // input: { featureId?, specBody, baseBranch, figmaSources? }
+      // input: { featureId?, specBody, checklistBody, baseBranch, figmaSources? }
       const m = META.parseMeta(input.specBody);
       const id = input.featureId || m.slug;
       if (!id) return { ok: false, error: '대상 스펙 경로에서 slug를 찾지 못했습니다.' };
@@ -92,16 +93,22 @@
       // 버전은 스킬 소유 — 헤더 값을 그대로 쓴다.
       const version = m.specVersion || '';
       const figma = mergeFigma(m.figmaSources, input.figmaSources);
+      // 체크리스트는 신규 업로드 필수. 수정 시 새로 첨부하지 않으면 기존 본문을 유지한다.
+      const checklistBody = (input.checklistBody && input.checklistBody.trim())
+        ? input.checklistBody : (i < 0 ? '' : store[i].checklistBody || '');
+      if (i < 0 && !checklistBody) {
+        return { ok: false, error: '품질 체크리스트(quality/spec-checklist.md)를 함께 첨부해야 합니다.' };
+      }
 
       if (i < 0) {
         const f = Object.assign(this.blank(), {
           featureId: id, slug: m.slug, title: m.title || id,
           specVersion: version, specStatus: m.specStatus || '', prdVersion: m.prdVersion || '',
-          baseBranch: input.baseBranch, specBody: input.specBody,
+          baseBranch: input.baseBranch, specBody: input.specBody, checklistBody,
           figmaSources: figma,
-          versionLog: VER.applySnapshot([], version, today(), input.specBody),
+          versionLog: VER.applySnapshot([], version, today(), input.specBody, checklistBody),
           createdBy: me ? me.uid : '', status: 'spec_draft',
-        });
+        }, checklistFields(checklistBody));
         store.push(f); persist();
         return { ok: true, feature: this.get(id), created: true };
       }
@@ -119,7 +126,9 @@
       f.baseBranch = input.baseBranch;
       f.figmaSources = figma;
       f.specBody = input.specBody;
-      f.versionLog = VER.applySnapshot(f.versionLog, f.specVersion, today(), input.specBody);
+      f.checklistBody = checklistBody;
+      Object.assign(f, checklistFields(checklistBody));
+      f.versionLog = VER.applySnapshot(f.versionLog, f.specVersion, today(), input.specBody, checklistBody);
       f.updatedAt = today();
 
       let invalidated = false;
@@ -225,6 +234,13 @@
       return { ok: true, feature: this.get(id) };
     },
   };
+
+  // 체크리스트 헤더 메타 → 저장 필드. 본문이 비면 필드도 비운다(레거시 문서 호환).
+  function checklistFields(body) {
+    if (!body || !body.trim()) return { checklistStatus: '', checklistTargetVersion: '' };
+    const c = META.parseChecklistMeta(body);
+    return { checklistStatus: c.status || '', checklistTargetVersion: c.targetVersion || '' };
+  }
 
   // 본문에서 뽑은 Figma 링크 + 수기 입력을 합친다 (중복 제거, 본문 우선)
   function mergeFigma(fromBody, manual) {

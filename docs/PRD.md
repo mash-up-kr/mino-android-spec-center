@@ -78,21 +78,21 @@ spec-center는 **Spec Driven Development(SDD) 문서 파이프라인의 컨트�
   - 산출물(spec.md/plan.md/assets)은 **drag-drop 업로드**로 받는다(4.2). 스킬은 Firestore에 직접 쓰지 않는다.
   - 출처 Figma URL은 컨펌 메타 노출용으로 **업로드 시 함께 입력**해 `figmaSources`로 저장한다(4.5).
 
-### 4.2 붙여넣기 & 구조 검증
-- spec.md 텍스트 + 이미지 파일을 함께 업로드(drag-drop).
+### 4.2 업로드 & 구조 검증
+- ~~spec.md 텍스트 + 이미지 파일을 함께 업로드(drag-drop)~~ → **`/mino-spec` 산출물 2종을 파일로 첨부**: `spec.md` + `quality/spec-checklist.md`. 둘 다 필수이고, 붙여넣기 편집창은 폐기됐다(v3.1).
+- **검수 대상은 spec.md 하나**다. 체크리스트는 개발자 자가검증 결과라 함께 보관·함께 PR 되지만 컨펌 게이트를 타지 않는다.
 - **가벼운 구조 검증** (1차 자가검수는 `spec-reviewer`가 이미 수행 → 대시보드는 2차 방어선. 내용 품질은 컨펌 게이트가 흡수):
   - ~~맨 첫 줄 `<!-- feature: {slug} -->` 주석 존재~~ → 헤더 `**대상 스펙 경로**: docs/specs/{slug}`
   - ~~필수 H2 제목 8개~~ → **필수 H2 4개**(유저 시나리오·요구사항·범위·가정)
   - ~~`2. 화면 상태별 읽기`에 이미지 ≥ 1~~ → 이미지 폐기. 화면 근거는 `**Figma**:` 노드 URL
   - ~~`interactionType` / 확정 enum~~ → **FR/UX/SC/TS ID 컨벤션** + 헤더 메타(상태·버전·날짜·기준 PRD) + 템플릿 자리표시자 잔여 0건
-- **v3 기준 검증 항목의 최신 정의는 [validation.md](design/validation.md)** (1차 방어선 = `/mino-spec` 품질 체크리스트 PASS → 헤더 `상태: CREATED`). 단, `DRAFT`·`[TBD]` 잔여는 **차단이 아니라 경고** — 확정이 필요한 스펙을 검수에 올리는 것이 이 대시보드의 목적이다.
+- **v3 기준 검증 항목의 최신 정의는 [validation.md](design/validation.md)** — spec은 S1–S6, 체크리스트는 C1–C7 (1차 방어선 = `/mino-spec` 품질 체크리스트 PASS → 헤더 `상태: CREATED`). 단, `DRAFT`·`[TBD]` 잔여·체크리스트 `FAILED`는 **차단이 아니라 경고** — 확정이 필요한 스펙을 검수에 올리는 것이 이 대시보드의 목적이다.
 
 ### 4.3 이미지 업로드 & 보관 — **폐기 (v3)**
 > 신 템플릿은 화면 근거를 **Figma 노드 URL**로 적는다. 이미지 업로드·Storage 보관·`assets/` 커밋 파이프라인은 제거됐고, `figmaSources`는 본문 `**Figma**:` 줄에서 자동 수집한다. [data-model.md](design/data-model.md) §2 참고.
 
-### 4.4 편집 UI
-- textarea 기반 편집. 소스=마크다운, 사용자=개발자이므로 풀 WYSIWYG 불필요.
-- 라이브 마크다운 프리뷰(이미지 렌더 포함)는 **Post-MVP**(8장) — 이미지 확인용으로 우선순위 높음.
+### 4.4 편집 UI — **폐기 (v3.1)**
+> ~~textarea 기반 편집~~ → 대시보드는 문서를 **만들지도 고치지도 않는다**. 업로드는 파일 첨부 슬롯 2개(spec / 체크리스트)뿐이고, 수정은 로컬 `/mino-spec`으로 개정한 파일을 다시 첨부하는 방식이다. 마크다운 프리뷰는 첨부한 문서를 문서별 탭으로 렌더해 확인하는 용도로 남는다.
 
 ### 4.5 디자이너 컨펌 게이트
 - 디자이너가 대시보드에서 승인/반려/코멘트. **spec 컨펌 전 PR 생성 불가.** (v1의 "plan 불가"는 plan 단계 제거로 대체)
@@ -130,14 +130,14 @@ plan 프롬프트에 docs 선별 규칙을 강제한다. (로컬 Claude Code가 
 | base | ~~`develop`~~ → **`<prefix>/<이슈번호>-<slug>/base`** (`/issue` 산출물, 업로드 시 선택) |
 | 라벨 | `spec` |
 | PR 제목 | `docs(spec): {slug} {버전}` |
-| 커밋 대상 | `docs/specs/{slug}/spec.md` **만** (plan.md·assets 커밋 폐기) |
-| PR 템플릿 | 얼라인 체크리스트 (spec 컨펌됨 / 품질 체크리스트 통과 / 담당자) + head→base 표기 |
+| 커밋 대상 | `docs/specs/{slug}/spec.md` + `docs/specs/{slug}/quality/spec-checklist.md` (plan.md·assets 커밋 폐기). Contents API 라 파일당 1커밋 |
+| PR 템플릿 | 포함 문서 목록 + 얼라인 체크리스트 (spec 컨펌됨 / 품질 체크리스트 통과 `N/M` / spec 헤더 상태 / `[TBD]` 잔여 / 담당자) + head→base 표기 |
 
 - **버저닝**: 버전 원천은 spec.md 헤더 `**버전**` 이며 **`/mino-spec` 스킬이 소유**한다(대시보드 bump·`변경 이력` 표 주입 폐기). 같은 base 브랜치의 spec 브랜치는 재사용되므로 개정 시 같은 PR에 커밋이 쌓인다.
 - **역방향 동기화**: GitHub `pull_request` Webhook → Cloud Function(HMAC 검증) → Firestore 상태 갱신. `merged`→`merged` / 미머지 close→`closed`.
 
 ### 4.8 전체 파이프라인 상태머신
-**단위**: `specs/{feature}/` 한 묶음(spec.md + plan.md)이 단일 `status`를 가진다.
+**단위**: `docs/specs/{feature}/` 한 묶음(spec.md + quality/spec-checklist.md)이 단일 `status`를 가진다. 상태를 움직이는 건 spec 컨펌이고, 체크리스트는 같은 묶음에 실려 다닌다.
 
 > v3 개정: `plan_drafted` 단계가 빠지고 `spec_approved` 에서 곧바로 PR 을 만든다.
 

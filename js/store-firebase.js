@@ -18,6 +18,12 @@
   const db = firebase.firestore();
   const META = window.MASCSpec;
   const VER = window.MASCVersion;
+  // 체크리스트 헤더 메타 → 저장 필드. 본문이 비면 필드도 비운다(레거시 문서 호환).
+  const checklistFields = (body) => {
+    if (!body || !body.trim()) return { checklistStatus: '', checklistTargetVersion: '' };
+    const c = META.parseChecklistMeta(body);
+    return { checklistStatus: c.status || '', checklistTargetVersion: c.targetVersion || '' };
+  };
   const today = () => new Date().toISOString().slice(0, 10);
   const serverTs = () => firebase.firestore.FieldValue.serverTimestamp();
   const arrayUnion = (v) => firebase.firestore.FieldValue.arrayUnion(v);
@@ -75,6 +81,8 @@
       baseBranch: d.baseBranch || '', figmaSources: d.figmaSources || [],
       prNumber: d.prNumber || null, prUrl: d.prUrl || null,
       specBody: d.specBody || '',
+      checklistBody: d.checklistBody || '',
+      checklistStatus: d.checklistStatus || '', checklistTargetVersion: d.checklistTargetVersion || '',
       reviews: d.reviews || [], versionLog: d.versionLog || [],
       createdBy: d.createdBy || '',
     };
@@ -223,23 +231,29 @@
       // 버전 소유권은 mino-spec 스킬 — 헤더 값을 그대로 반영한다.
       const version = m.specVersion || '';
       const figma = mergeFigma(m.figmaSources, input.figmaSources);
+      // 체크리스트는 신규 업로드 필수. 수정 시 새로 첨부하지 않으면 기존 본문을 유지한다.
+      const checklistBody = (input.checklistBody && input.checklistBody.trim())
+        ? input.checklistBody : (existing ? existing.checklistBody : '');
+      if (!existing && !checklistBody) {
+        return { ok: false, error: '품질 체크리스트(quality/spec-checklist.md)를 함께 첨부해야 합니다.' };
+      }
 
       if (!existing) {
-        await ref.set({
+        await ref.set(Object.assign({
           slug: m.slug, title: m.title || id, status: 'spec_draft',
           specVersion: version, specStatus: m.specStatus || '', prdVersion: m.prdVersion || '',
           baseBranch: input.baseBranch, figmaSources: figma,
-          prNumber: null, prUrl: null, specBody: input.specBody,
-          reviews: [], versionLog: VER.applySnapshot([], version, today(), input.specBody),
+          prNumber: null, prUrl: null, specBody: input.specBody, checklistBody,
+          reviews: [], versionLog: VER.applySnapshot([], version, today(), input.specBody, checklistBody),
           createdBy: current.uid, createdAt: serverTs(), updatedAt: serverTs(),
-        });
+        }, checklistFields(checklistBody)));
         return { ok: true, feature: { featureId: id }, created: true };
       }
 
       // 승인 이후(머지 포함) 수정은 무효화 — spec_draft 복귀 + 열린 PR close.
       const wasCommitted = COMMITTED.includes(existing.status);
       const nextVersion = version || existing.specVersion;
-      const patch = {
+      const patch = Object.assign({
         slug: m.slug || existing.slug, title: m.title || existing.title,
         specVersion: nextVersion,
         specStatus: m.specStatus || existing.specStatus,
@@ -247,9 +261,10 @@
         baseBranch: input.baseBranch,
         figmaSources: figma,
         specBody: input.specBody,
-        versionLog: VER.applySnapshot(existing.versionLog, nextVersion, today(), input.specBody),
+        checklistBody,
+        versionLog: VER.applySnapshot(existing.versionLog, nextVersion, today(), input.specBody, checklistBody),
         updatedAt: serverTs(),
-      };
+      }, checklistFields(checklistBody));
       let invalidated = false;
       let closePr = null;
       // 승인 이후 본문을 고쳤는데 스킬이 버전을 올리지 않았으면 경고

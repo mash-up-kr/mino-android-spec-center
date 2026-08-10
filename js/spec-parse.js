@@ -7,6 +7,8 @@
  *   - specVersion: `**버전**: 1.0.0` (버전 소유권은 mino-spec 스킬 — 대시보드는 읽기만)
  *   - status/prdVersion/createdAt/updatedAt: 헤더 메타 필드
  *   - figma:       §1 유저 시나리오의 `**Figma**:` 줄에 있는 링크들
+ * 같은 헬퍼로 `/mino-spec` 의 두 번째 산출물인 품질 체크리스트
+ * (`quality/spec-checklist.md`, mino-sdd/template/spec-checklist-template.md) 메타도 파싱한다.
  * 또한 검증기(validate.js)가 공유하는 헤딩/섹션/표 헬퍼를 노출한다.
  */
 (function () {
@@ -192,8 +194,67 @@
     };
   }
 
+  // ---------- 품질 체크리스트 (quality/spec-checklist.md) ----------
+
+  // H1 `# Spec 품질 체크리스트: {기능명}` → 기능명 (접두사 없으면 H1 전체)
+  function parseChecklistTitle(src) {
+    for (const line of NL(src)) {
+      const m = line.match(/^#\s+(.+?)\s*$/);
+      if (!m) continue;
+      const t = m[1].trim();
+      const c = t.match(/^Spec\s*품질\s*체크리스트\s*[:：]\s*(.+)$/i);
+      return (c ? c[1] : t).trim();
+    }
+    return null;
+  }
+
+  // 체크박스 집계 — `- [x]` / `- [X]` 는 통과, `- [ ]` 는 미통과
+  function countChecks(src) {
+    let checked = 0, total = 0;
+    NL(src).forEach((l) => {
+      const m = l.match(/^\s*[-*]\s+\[([ xX])\]\s/);
+      if (!m) return;
+      total++;
+      if (m[1] !== ' ') checked++;
+    });
+    return { checked, total };
+  }
+
+  // `**대상 스펙**: [spec.md](../spec.md) - v1.0` → 링크와 버전
+  function parseChecklistTarget(src) {
+    const v = headerField(src, '대상 스펙') || '';
+    const link = linkRefs(v, false)[0] || null;
+    // 링크 텍스트 안의 숫자(예: `[spec.md]`)를 버전으로 오인하지 않도록 링크 부분을 지우고 찾는다
+    const rest = v.replace(/\[[^\]]*\]\([^)]*\)/g, ' ');
+    const m = rest.match(/\bv?(\d+(?:\.\d+){1,2})\b/);
+    return { targetSpecLink: link, targetVersion: m ? m[1] : null, raw: v || null };
+  }
+
+  const parseChecklistStatus = (src) => {
+    const v = headerField(src, '상태');
+    if (!v) return null;
+    const m = v.match(/\b(PASS|FAILED|DRAFT)\b/i);
+    return m ? m[1].toUpperCase() : v;
+  };
+
+  function parseChecklistMeta(src) {
+    const t = parseChecklistTarget(src);
+    const c = countChecks(src);
+    return {
+      title: parseChecklistTitle(src),
+      status: parseChecklistStatus(src),
+      createdAt: parseDate(src, '작성일'),
+      targetSpecLink: t.targetSpecLink,
+      targetVersion: t.targetVersion,
+      targetRaw: t.raw,
+      checked: c.checked,
+      total: c.total,
+    };
+  }
+
   window.MASCSpec = {
     parseMeta, parseSlug, parseTitle, parseVersion, parseStatus, parseFigmaSources, parseFigmaLinks,
+    parseChecklistMeta, parseChecklistTitle, parseChecklistStatus, countChecks,
     headerField, headings, h2List, coreTitle,
     sectionBlock, blockByRaw, blocksByRaw, parseTables, imageRefs, linkRefs,
   };

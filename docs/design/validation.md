@@ -1,7 +1,7 @@
-# 붙여넣기 구조 검증 (구현 명세)
+# 업로드 구조 검증 (구현 명세)
 
-> 출처: [PRD](../PRD.md) 4.2 · Mino-Android `mino-sdd/template/spec-template.md`
-> 상태: **구현 완료** ([js/validate.js](../../js/validate.js) `validateSpec`) · v3 (신 spec 템플릿) 기준
+> 출처: [PRD](../PRD.md) 4.2 · Mino-Android `mino-sdd/template/spec-template.md` · `mino-sdd/template/spec-checklist-template.md`
+> 상태: **구현 완료** ([js/validate.js](../../js/validate.js) `validateSpec` · `validateChecklist`) · v3.1 (문서 2종 첨부) 기준
 > 위치: 대시보드 업로드 시 **2차 방어선**. 1차 자가검수는 로컬 `/mino-spec`의 **품질 체크리스트**가 수행하고(통과 시 헤더 `상태: CREATED`), 내용 품질은 컨펌 게이트가 흡수한다. 대시보드는 **기계적 구조 검증만** 한다.
 > 단, **미완성 신호(`상태: DRAFT` · `[TBD]` 잔여)는 차단하지 않는다** — 확정되지 않은 항목이야말로 디자이너 검수에 올려야 하는 대상이고, 그게 이 대시보드의 목적이기 때문이다. 경고로 표시하고 저장은 진행한다.
 
@@ -21,6 +21,17 @@ spec 템플릿이 전면 교체되면서 검증 대상이 전부 달라졌다.
 
 이미지 업로드·Storage·assets 커밋 파이프라인은 **폐기**됐다(구 S3·S5).
 
+## 0-1. v3 → v3.1 — 검증 대상이 문서 2종으로
+
+`/mino-spec` 은 산출물을 **2개** 낸다. 둘 다 업로드하고 둘 다 PR 에 실리되, **디자이너 검수 대상은 spec 하나뿐**이다.
+
+| 문서 | 경로 | 검증 | 검수 |
+|---|---|---|---|
+| spec | `docs/specs/{slug}/spec.md` | S1–S6 | **디자이너 컨펌 대상** |
+| 품질 체크리스트 | `docs/specs/{slug}/quality/spec-checklist.md` | C1–C7 | 읽기 전용 참고 자료 |
+
+업로드는 **붙여넣기가 아니라 파일 첨부**다(v3.1에서 편집창 폐기). 대시보드가 본문을 만들거나 고치지 않는다는 원칙을 UI 로 강제한 것이다. 드롭한 파일은 본문 H1(`# 스펙 명세서:` / `# Spec 품질 체크리스트:`)로 자동 분류되고, 판별에 실패하면 슬롯에서 직접 지정한다.
+
 ## 1. 검증 항목 (하드 항목을 모두 통과해야 `spec_draft` 생성·컨펌요청 허용)
 
 | # | 항목 | 규칙 | 차단 |
@@ -37,6 +48,26 @@ spec 템플릿이 전면 교체되면서 검증 대상이 전부 달라졌다.
 > **미완성 스펙은 반려 대상이 아니라 검수 대상이다.** `상태: DRAFT`거나 `[TBD]`가 남아 있다는 건 "디자이너와 확정해야 할 지점이 있다"는 뜻이므로, 대시보드가 막으면 정작 물어볼 곳이 사라진다. 두 신호는 경고로 표시하고 업로드는 통과시키며, 상세 패널·spec PR 체크리스트에 "확정 필요"로 남는다.
 >
 > 반면 **템플릿 자리표시자(S6)는 계속 하드 차단**이다 — 이건 판단이 필요한 미확정 항목이 아니라 템플릿을 손대지 않은 흔적이다. 헤더 상태 필드가 `[DRAFT, CREATED]` 그대로면 이 규칙에 걸려 여전히 막힌다.
+
+## 1-1. 품질 체크리스트 검증 항목 (C1–C7)
+
+기준: `mino-sdd/template/spec-checklist-template.md`. spec 과 같은 원칙 — **골격은 하드 차단, 미통과는 경고**.
+
+| # | 항목 | 규칙 | 차단 |
+|---|---|---|---|
+| C1 | H1 제목 | `# Spec 품질 체크리스트: {기능명}` | 하드 |
+| C2 | 헤더 메타 | `작성일` = `YYYY-MM-DD` · `대상 스펙` 에서 spec 버전 파싱 가능 | 하드 |
+| C3 | 상태 어휘 | `상태` ∈ {PASS, FAILED, DRAFT} | 하드 |
+| C3-w | 미통과 상태 | `상태`가 `PASS`가 아니면 **경고** (저장은 진행) | 소프트 |
+| C4 | 필수 H2 4개 | `스펙 품질` → `요구사항 완전성` → `스펙 완성도` → `비고` 가 **순서대로** 존재 | 하드 |
+| C5 | 체크박스 | `- [ ]` / `- [x]` 항목 ≥1 | 하드 |
+| C5-w | 미체크 항목 | 미체크가 있으면 **경고** (`N/M 통과` 로 표시) | 소프트 |
+| C6 | 자리표시자 잔여 | `[FEATURE NAME]`·`[날짜]`·`[PASS/FAILED/DRAFT]`·`[spec.md 링크]` 등 0건 | 하드 |
+| C7 | spec 버전 대조 | 체크리스트 `대상 스펙` 버전 ↔ spec 헤더 `버전` | 소프트 |
+
+> **C7은 `major.minor` 까지만 비교한다.** 체크리스트 템플릿의 예시 표기가 `v1.0`(2자리)인데 spec 헤더는 `1.0.0`(3자리)이라 엄격 비교하면 정상 산출물이 전부 걸린다. PATCH 차이는 오탐이므로 무시하고, MAJOR/MINOR 가 어긋날 때만 "이전 버전 기준 체크리스트일 수 있음"을 경고한다. 하드로 올리려면 `js/validate.js` 의 `majorMinor` 비교를 원문 비교로 바꾸고 `warn` → `add` 로 바꾸면 된다.
+>
+> `상태: FAILED` 를 막지 않는 이유는 DRAFT spec 을 막지 않는 이유와 같다 — 자가검증에서 걸린 항목이야말로 디자이너와 확정해야 할 지점이다. 대신 상세 패널 요약과 spec PR 본문 체크리스트에 미체크로 남는다.
 
 ## 2. 필수 H2 4개 (S2) — 순서·제목
 
@@ -64,14 +95,18 @@ spec 템플릿이 전면 교체되면서 검증 대상이 전부 달라졌다.
 ## 4. 구현 메모
 
 - 파서는 **본문을 데이터로 파싱하지 않는다**. 헤딩 추출 + 헤더 필드(`**이름**: 값`) + 정규식 검사만.
-- `js/spec-parse.js`: `parseMeta(body)` → `{ slug, title, specVersion, specStatus, prdVersion, createdAt, updatedAt, figmaSources }`.
-- `js/validate.js`: `validateSpec(body) → { ok, errors: [{code, msg}], warnings: [{code, msg}], meta }`. `errors`가 있으면 붉은 박스로 표시하고 저장을 막는다. `warnings`(DRAFT·`[TBD]`)는 노란 박스로 표시만 하고 저장은 진행한다(`ok`에 영향 없음).
-- 업로드 후에도 미완성 신호는 계속 보인다: 상세 패널 문서 섹션의 `spec-draft-note`(상태 DRAFT · 미해소 `[TBD]` N건)와, spec PR 본문 체크리스트의 미체크 항목(`functions/index.js` `prTemplate`).
+- `js/spec-parse.js`: `parseMeta(body)` → `{ slug, title, specVersion, specStatus, prdVersion, createdAt, updatedAt, figmaSources }`. 체크리스트는 같은 헬퍼(`headings`/`headerField`/`coreTitle`)를 재사용하는 `parseChecklistMeta(body)` → `{ title, status, createdAt, targetSpecLink, targetVersion, checked, total }`.
+- `js/validate.js`: `validateSpec(body)` · `validateChecklist(body, specMeta)` → `{ ok, errors: [{code, msg}], warnings: [{code, msg}], meta }`. 두 결과를 문서별로 묶어 한 박스에 표시한다. `errors`가 하나라도 있으면 저장을 막고, `warnings`는 노란 박스로 표시만 하고 저장은 진행한다(`ok`에 영향 없음). `specMeta`는 C7 대조용이라 생략하면 C7만 건너뛴다.
+- 업로드 후에도 미완성 신호는 계속 보인다: 상세 패널 문서 섹션의 `spec-draft-note`(상태 DRAFT · 미해소 `[TBD]` N건)와 `checklist-line`(체크리스트 상태 · N/M 통과), 그리고 spec PR 본문 체크리스트의 미체크 항목(`functions/index.js` `prTemplate`).
 - **figmaSources 자동 수집**: §1의 `**Figma**:` 줄에 있는 `http(s)` 링크를 모아 `features.figmaSources`에 저장한다. 자리표시자(`(노드 URL)`)는 http 가 아니라 자동으로 걸러진다. 수기 입력란은 폐기됐다 — 출처는 본문이 단일 소스다.
 - 버전은 **구조만 확인**하고 값은 그대로 저장한다. bump·표 주입은 하지 않는다(소유권은 `/mino-spec`). 상세는 [state-machine.md](state-machine.md) §3.
 
 ## 5. 검증 ↔ 자동화 추적성
 
-`/mino-spec` 품질 체크리스트 합격 = 상태 `CREATED`. 대시보드 S1–S6은 그 산출물이 템플릿 골격을 유지했는지만 재확인하므로, 스킬을 정상 완료한 산출물은 대시보드 검증도 통과해야 정상이다(불일치 시 스킬/검증기 중 하나의 버그). 반대로 체크리스트를 통과하지 못한 `DRAFT` 산출물도 **골격만 갖췄으면 올라온다** — 검수에서 확정할 항목을 안고 올라오는 게 정상 경로다.
+`/mino-spec` 품질 체크리스트 합격 = 체크리스트 상태 `PASS` = spec 헤더 상태 `CREATED`. 대시보드 S1–S6·C1–C7은 그 산출물이 템플릿 골격을 유지했는지만 재확인하므로, 스킬을 정상 완료한 산출물은 대시보드 검증도 통과해야 정상이다(불일치 시 스킬/검증기 중 하나의 버그). 반대로 체크리스트를 통과하지 못한 `DRAFT`/`FAILED` 산출물도 **골격만 갖췄으면 올라온다** — 검수에서 확정할 항목을 안고 올라오는 게 정상 경로다.
 
-빈 템플릿(`spec-template.md` 원본)을 그대로 올리면 S1·S6(자리표시자)에서 걸려 반드시 차단된다 — 회귀 확인용 기준 케이스다. 반대로 골격을 채운 `DRAFT` + `[TBD]` 스펙은 경고 2건과 함께 **통과해야** 한다(이쪽도 회귀 케이스).
+회귀 확인용 기준 케이스:
+
+- 빈 템플릿 원본(`spec-template.md` / `spec-checklist-template.md`)을 그대로 올리면 자리표시자(S6 / C6)에서 걸려 **반드시 차단**된다.
+- 골격을 채운 `DRAFT` + `[TBD]` spec 과 `FAILED` + 미체크 체크리스트는 경고와 함께 **통과해야** 한다.
+- 체크리스트 `대상 스펙` 버전을 spec 버전과 다르게 두면 C7 경고 1건이 뜨고 저장은 진행돼야 한다.

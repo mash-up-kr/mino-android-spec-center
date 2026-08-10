@@ -287,35 +287,51 @@ table.feature-table { width: 100%; border-collapse: collapse; }
 .editor-msg { font-size: 12px; color: var(--muted); }
 .editor-msg.error { color: var(--red); }
 
-/* Editor paste tab */
-.editor-tabs { display: flex; gap: 6px; margin-bottom: 14px; }
-.editor-tabs button {
-  background: #fff; border: 1px solid var(--border); border-radius: 8px;
-  padding: 7px 14px; font-size: 13px; color: var(--muted);
-}
-.editor-tabs button.active { background: var(--accent); border-color: var(--accent); color: #fff; }
 .paste-help {
   display: flex; align-items: center; justify-content: space-between; gap: 10px;
   font-size: 12px; color: var(--muted); margin-bottom: 8px;
 }
-.paste-area {
-  width: 100%; min-height: 320px; padding: 12px; border: 1px solid var(--border);
-  border-radius: 10px; font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
-  font-size: 12.5px; line-height: 1.55; resize: vertical;
-}
-.paste-area:focus { outline: none; border-color: var(--accent); }
-.paste-tall { min-height: 460px; }
-.task-preview { margin-top: 8px; font-size: 12px; color: var(--muted); }
 
-/* 업로드: 편집기 ↔ 라이브 프리뷰 2단 */
+/* 업로드: 첨부 슬롯 ↔ 프리뷰 2단 (붙여넣기 편집창 폐기 — 파일 첨부만) */
 .upload-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; align-items: start; }
 .upload-preview { position: sticky; top: 0; }
 .upload-preview .lbl { margin-bottom: 6px; }
+.preview-head { display: flex; align-items: center; gap: 10px; margin-bottom: 6px; }
+.preview-head .lbl { margin-bottom: 0; }
 .up-preview {
   border: 1px solid var(--border); border-radius: 10px; padding: 14px 16px;
   max-height: 64vh; overflow: auto; background: var(--bg);
 }
 @media (max-width: 900px) { .upload-grid { grid-template-columns: 1fr; } }
+
+/* 문서 탭 (업로드 프리뷰 · 버전 diff) */
+.doc-tabs { display: flex; gap: 6px; flex-wrap: wrap; }
+.doc-tab {
+  background: var(--bg); border: 1px solid var(--border); border-radius: 999px;
+  padding: 4px 12px; font-size: 12px; color: var(--muted); white-space: nowrap;
+}
+.doc-tab.active { background: var(--accent); border-color: var(--accent); color: #fff; }
+.doc-tab:disabled { opacity: .4; cursor: not-allowed; }
+
+/* 첨부 슬롯 — spec.md / quality/spec-checklist.md 각각 한 칸 */
+.up-slots { display: flex; flex-direction: column; gap: 8px; }
+.up-slot {
+  display: flex; align-items: center; gap: 10px;
+  border: 1px solid var(--border); border-radius: 10px; padding: 10px 12px;
+}
+.up-slot.empty { border-style: dashed; }
+.up-slot.filled { background: var(--bg); }
+.up-slot .slot-ico { font-size: 18px; line-height: 1; }
+.up-slot .slot-main { flex: 1; min-width: 0; }
+.slot-title { display: flex; align-items: center; gap: 6px; font-size: 13px; font-weight: 600; flex-wrap: wrap; }
+.slot-hint { font-weight: 400; font-size: 11px; }
+.slot-name { font-size: 12px; margin-top: 3px; overflow-wrap: anywhere; }
+.slot-meta { font-size: 11.5px; margin-top: 2px; }
+.up-doc-group + .up-doc-group { margin-top: 6px; }
+.up-doc-label { font-size: 11px; opacity: .8; padding-top: 4px; }
+
+/* 체크리스트 요약 (상세 패널 문서 섹션) */
+.checklist-line { display: flex; align-items: center; gap: 8px; margin-top: 6px; }
 
 /* 문서 단계 */
 .stage-row { display: flex; gap: 8px; }

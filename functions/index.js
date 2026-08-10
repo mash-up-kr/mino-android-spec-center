@@ -3,7 +3,8 @@
  * ----------------------------------------------------------------------
  *  1) githubOAuthExchange — OAuth code → user access token 교환
  *  2) listBaseBranches    — `/issue` 가 만든 `…/base` 브랜치 목록 조회
- *  3) createSpecPR        — `…/spec` 브랜치 생성 → spec.md 커밋 → base 브랜치로 PR (개발자 명의)
+ *  3) createSpecPR        — `…/spec` 브랜치 생성 → spec.md + quality/spec-checklist.md 커밋
+ *                           → base 브랜치로 PR (개발자 명의)
  *  4) githubWebhook       — pull_request 수신(HMAC 검증) → Firestore status 역동기화
  *  5) notifyOnFeatureWrite — 상태 전이 → Discord 알림 (notify.js, P5.2)
  *
@@ -153,9 +154,14 @@ exports.createSpecPR = onCall(async (request) => {
       if (e.status !== 422) throw e; // 이미 존재하면 재사용
     });
 
-    // ② spec.md 커밋 (Contents API). plan.md·assets 커밋은 폐기 —
-    //    plan/task 는 같은 base 아래 별도 하위 작업 브랜치가 담당한다.
+    // ② `/mino-spec` 산출물 2개 커밋 (Contents API — 파일당 1커밋).
+    //    plan.md·assets 커밋은 폐기 — plan/task 는 같은 base 아래 별도 하위 작업 브랜치가 담당한다.
     await putFile(octokit, branch, `${dir}/spec.md`, f.specBody, `docs(spec): ${slug} ${version}`.trim());
+    // 체크리스트는 업로드 필수지만, 도입 이전에 만들어진 레거시 문서는 비어 있을 수 있다 → spec 만 싣는다.
+    if (f.checklistBody && f.checklistBody.trim()) {
+      await putFile(octokit, branch, `${dir}/quality/spec-checklist.md`, f.checklistBody,
+        `docs(spec): ${slug} 품질 체크리스트 ${version}`.trim());
+    }
 
     // ③ PR 생성 — base 는 develop 이 아니라 이슈 base 브랜치
     const pr = await octokit.pulls.create({
@@ -244,29 +250,57 @@ async function putFile(octokit, branch, path, content, message) {
   });
 }
 
+// 체크리스트 본문에서 상태·통과 개수를 읽는다 (`quality/spec-checklist.md` 헤더 + 체크박스).
+// 대시보드의 spec-parse.js 와 같은 규칙이지만, Functions 는 브라우저 코드를 공유하지 않아 최소 구현만 둔다.
+function checklistSummary(body) {
+  const src = String(body || '');
+  if (!src.trim()) return null;
+  const st = /^\*\*\s*상태\s*\*\*\s*[:：]\s*(.*)$/m.exec(src);
+  const status = st ? ((/\b(PASS|FAILED|DRAFT)\b/i.exec(st[1]) || [])[1] || '').toUpperCase() : '';
+  let checked = 0, total = 0;
+  src.split('\n').forEach((l) => {
+    const m = /^\s*[-*]\s+\[([ xX])\]\s/.exec(l);
+    if (!m) return;
+    total++;
+    if (m[1] !== ' ') checked++;
+  });
+  return { status, checked, total };
+}
+
 function prTemplate(f, baseBranch, headBranch) {
   const issue = (BASE_BRANCH_RE.exec(baseBranch || '') || [])[1];
-  // DRAFT·[TBD] 스펙도 업로드·컨펌이 가능하므로 체크 상태를 실제 헤더 값으로 반영한다.
-  const created = f.specStatus === 'CREATED';
+  // DRAFT·[TBD] 스펙도 업로드·컨펌이 가능하므로 체크 상태를 실제 산출물 값으로 반영한다.
+  const dir = `docs/specs/${f.slug}`;
   const tbd = ((f.specBody || '').match(/\[TBD\b[^\]]*\]/g) || []).length;
+  const c = checklistSummary(f.checklistBody);
+  const quality = !c
+    ? '- [ ] 품질 체크리스트 첨부 — **누락** (`/mino-spec`의 `quality/spec-checklist.md`를 올려주세요)'
+    : c.status === 'PASS'
+      ? `- [x] 품질 체크리스트 통과 (로컬 \`/mino-spec\` · ${c.checked}/${c.total})`
+      : `- [ ] 품질 체크리스트 통과 — 상태 \`${c.status || '미상'}\` · ${c.checked}/${c.total} (머지 전 \`/mino-spec\`으로 확정 필요)`;
+  // 조건부로 빠지는 줄은 null, 의도한 빈 줄은 ''. 빈 줄까지 걸러내면 목록 바로 뒤의
+  // 인용문이 리스트 항목으로 흡수돼 GitHub 렌더가 깨진다.
   return [
     `## 스펙 PR — ${f.title}`,
     '',
+    '### 포함 문서',
+    `- \`${dir}/spec.md\` — 디자이너 컨펌 대상`,
+    c ? `- \`${dir}/quality/spec-checklist.md\` — 품질 검증 결과` : null,
+    '',
     '### 얼라인 체크리스트',
     '- [x] spec 컨펌됨 (디자이너 승인)',
-    created
-      ? '- [x] 품질 체크리스트 통과 (로컬 `/mino-spec`, 헤더 상태 `CREATED`)'
-      : `- [ ] 품질 체크리스트 통과 — 헤더 상태 \`${f.specStatus || '미상'}\` (머지 전 \`/mino-spec\`으로 확정 필요)`,
-    tbd ? `- [ ] 미해소 \`[TBD]\` ${tbd}건 확정` : '',
+    quality,
+    f.specStatus === 'CREATED' ? null : `- [ ] spec 헤더 상태 확정 — 현재 \`${f.specStatus || '미상'}\``,
+    tbd ? `- [ ] 미해소 \`[TBD]\` ${tbd}건 확정` : null,
     '- [ ] 담당자 확인',
     '',
     `> \`${headBranch}\` → \`${baseBranch}\``,
     `> slug: \`${f.slug}\` · 버전: \`${f.specVersion || ''}\` · 기준 PRD: \`${f.prdVersion || '없음'}\``,
-    issue ? `> 관련 이슈: #${issue}` : '',
-    f.figmaSources && f.figmaSources.length ? `> 출처: ${f.figmaSources.join(' , ')}` : '',
+    issue ? `> 관련 이슈: #${issue}` : null,
+    f.figmaSources && f.figmaSources.length ? `> 출처: ${f.figmaSources.join(' , ')}` : null,
     '',
     '머지 후 같은 base 브랜치에서 `/mino-plan` · `/mino-task` 를 이어서 진행합니다.',
-  ].filter((l) => l !== '').join('\n');
+  ].filter((l) => l !== null).join('\n');
 }
 
 // ===================== 4) Webhook 역동기화 =====================

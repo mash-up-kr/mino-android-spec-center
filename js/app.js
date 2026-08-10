@@ -44,6 +44,19 @@
     spec_approved: 2, pr_open: 3, merged: 4, pr_closed: 3,
   };
 
+  // `/mino-spec` 산출물 2종. 둘 다 업로드하고 둘 다 PR 에 실리지만,
+  // **디자이너 검수 대상은 spec 하나뿐**이다 (체크리스트는 개발자 자가검증 결과).
+  const DOC_KINDS = [
+    {
+      kind: 'spec', icon: '📄', label: 'spec.md', path: 'docs/specs/{slug}/spec.md',
+      bodyKey: 'specBody', snapKey: 'body', hint: '디자이너 검수 대상',
+    },
+    {
+      kind: 'checklist', icon: '📋', label: 'spec-checklist.md', path: 'quality/spec-checklist.md',
+      bodyKey: 'checklistBody', snapKey: 'checklistBody', hint: '품질 검증 결과 · 검수 대상 아님',
+    },
+  ];
+
   const state = { status: 'all', quick: new Set(), search: '', selectedId: null };
   // Discord 알림 딥링크(?feature={id}, notifications.md §4) — 데이터 로드 후 1회 적용
   let pendingDeepLink = new URLSearchParams(location.search).get('feature');
@@ -203,16 +216,19 @@
           <code>&lt;prefix&gt;/&lt;이슈번호&gt;-&lt;slug&gt;/base</code> 브랜치가 자동 생성됩니다
           (업로드 시 이 브랜치를 고릅니다)</li>
         <li><b>spec 생성</b> — <code>/mino-spec</code> 실행 · 입력: 기능 설명 + Figma URL →
-          <code>docs/specs/{feature}/spec.md</code> + 품질 체크리스트 산출.
+          <code>docs/specs/{feature}/spec.md</code> + <code>quality/spec-checklist.md</code> 산출.
           상태가 <code>DRAFT</code>이거나 <code>[TBD]</code>가 남아 있어도 업로드할 수 있습니다
           (경고만 표시 — 검수로 확정할 항목)</li>
-        <li><b>업로드</b> — spec.md를 이 대시보드에 붙여넣기/드롭 ([+ 새 스펙 업로드]) →
-          구조 검증(S1–S6) → base 브랜치 선택 → 디자이너 컨펌</li>
-        <li><b>PR</b> — 승인되면 <code>PR 생성</code>으로 <code>…/spec</code> 브랜치를 만들어 base 브랜치로 PR</li>
+        <li><b>업로드</b> — 산출된 <b>두 파일을 그대로 첨부</b> ([+ 새 스펙 업로드]) →
+          구조 검증(spec S1–S6 · 체크리스트 C1–C7) → base 브랜치 선택 → 디자이너 컨펌.
+          <b>검수 대상은 spec.md 뿐</b>이고 체크리스트는 참고 자료로 함께 보관됩니다</li>
+        <li><b>PR</b> — 승인되면 <code>PR 생성</code>으로 <code>…/spec</code> 브랜치를 만들어
+          <b>spec.md와 체크리스트를 함께</b> 커밋하고 base 브랜치로 PR</li>
         <li><b>이후 단계</b> — <code>/mino-plan</code>·<code>/mino-task</code>는 대시보드를 거치지 않고
           같은 base 브랜치 아래 하위 작업으로 진행합니다</li>
       </ol>
-      <div class="legend-note">대시보드는 입력값 치환을 하지 않습니다. 스킬 실행 시 직접 Figma URL·기획서를 전달하세요.</div>`;
+      <div class="legend-note">대시보드는 입력값 치환을 하지 않습니다 — 문서를 만들지도 고치지도 않고
+        파일을 그대로 받습니다. 스킬 실행 시 직접 Figma URL·기획서를 전달하세요.</div>`;
   }
 
   // ===================== 역할별 사용법 =====================
@@ -222,11 +238,11 @@
         문서 생성은 대시보드가 아니라 로컬 Claude Code 스킬(<code>스킬 안내</code> 참고)로 합니다.`,
       steps: [
         `<b>이슈·base 브랜치</b> — Mino-Android 레포에서 <code>git pull</code> → <code>/issue</code>로 이슈와 <code>&lt;prefix&gt;/&lt;이슈번호&gt;-&lt;slug&gt;/base</code> 브랜치 생성`,
-        `<b>스펙 작성 (로컬)</b> — <code>/mino-spec</code>으로 <code>docs/specs/{feature}/spec.md</code> 생성. 헤더 <code>상태: DRAFT</code>거나 <code>[TBD]</code>가 남아 있어도 업로드 가능 — 확정이 필요한 항목일수록 검수에 올리세요`,
-        `<b>업로드 + 검증</b> — <code>+ 새 스펙 업로드</code>에 spec.md 붙여넣기/드롭 → <b>base 브랜치 선택</b> → S1–S6 구조 검증 통과 시 <code>spec_draft</code> 생성 (DRAFT·<code>[TBD]</code>는 경고로만 표시되고 저장은 진행됨. 버전은 헤더 <code>**버전**</code> 값을 그대로 사용)`,
+        `<b>스펙 작성 (로컬)</b> — <code>/mino-spec</code>으로 <code>docs/specs/{feature}/spec.md</code>와 <code>quality/spec-checklist.md</code> 생성. 헤더 <code>상태: DRAFT</code>거나 <code>[TBD]</code>가 남아 있어도 업로드 가능 — 확정이 필요한 항목일수록 검수에 올리세요`,
+        `<b>업로드 + 검증</b> — <code>+ 새 스펙 업로드</code>에 <b>두 파일을 함께 첨부</b>(드롭하면 자동 분류) → <b>base 브랜치 선택</b> → spec S1–S6 · 체크리스트 C1–C7 구조 검증 통과 시 <code>spec_draft</code> 생성 (DRAFT·<code>[TBD]</code>·체크리스트 <code>FAILED</code>는 경고로만 표시되고 저장은 진행됨. 버전은 헤더 <code>**버전**</code> 값을 그대로 사용)`,
         `<b>컨펌 요청</b> — 상세에서 <code>컨펌 요청</code> → <code>spec_in_review</code> 전환 + spec이 read-only로 잠김`,
         `<b>반려 반영 → 재요청</b> — 반려(<code>spec_changes_requested</code>) 시 로컬에서 <code>/mino-spec</code>으로 개정(버전 bump는 스킬이 판정) → <code>spec 수정</code>으로 재업로드 후 <code>컨펌 요청</code>`,
-        `<b>PR 생성</b> — 승인(<code>spec_approved</code>)되면 <code>PR 생성</code> → <code>&lt;prefix&gt;/&lt;이슈번호&gt;-&lt;slug&gt;/spec</code> 브랜치에 <code>docs/specs/{slug}/spec.md</code> 커밋 → <b>base 브랜치로 PR</b> → <code>pr_open</code>`,
+        `<b>PR 생성</b> — 승인(<code>spec_approved</code>)되면 <code>PR 생성</code> → <code>&lt;prefix&gt;/&lt;이슈번호&gt;-&lt;slug&gt;/spec</code> 브랜치에 <code>docs/specs/{slug}/spec.md</code> + <code>docs/specs/{slug}/quality/spec-checklist.md</code> 커밋 → <b>base 브랜치로 PR</b> → <code>pr_open</code>`,
         `<b>이후 단계</b> — 머지되면 같은 base 브랜치에서 <code>/mino-plan</code>·<code>/mino-task</code>를 진행합니다. plan은 대시보드 검토 대상이 아닙니다`,
         `<b>무효화</b> — 승인 이후 <code>spec 수정</code> 시 자동으로 <code>spec_draft</code> 복귀 + 열린 PR close`,
       ],
@@ -237,7 +253,7 @@
         PR·이후 구현 단계에는 관여하지 않습니다(문서 생성 스킬도 사용하지 않습니다).`,
       steps: [
         `<b>검토 대기 확인</b> — 좌측 <code>검토중</code> 필터 또는 상단 KPI <b>검토중</b>으로 <code>spec_in_review</code>만 추려 대상 Feature 선택`,
-        `<b>스펙 검토</b> — 상세의 <code>📝 스펙 검토</code>로 리뷰 모드 열기. 유저 플로우의 <b>Figma 링크</b>로 원본과 대조하고, 제목 옆 <b>💬</b>로 플로우·요구사항에 인라인 코멘트`,
+        `<b>스펙 검토</b> — 상세의 <code>📝 스펙 검토</code>로 리뷰 모드 열기. 유저 플로우의 <b>Figma 링크</b>로 원본과 대조하고, 제목 옆 <b>💬</b>로 플로우·요구사항에 인라인 코멘트. <b>검수 대상은 spec.md 하나</b>이고, 함께 올라온 <code>📋 체크리스트 보기</code>는 개발자 자가검증 결과라 읽기 전용 참고 자료입니다`,
         `<b>승인</b> — <code>spec_approved</code>로 전환, 개발자의 PR 생성 잠금 해제`,
         `<b>반려</b> — <code>spec_changes_requested</code>로 전환. <b>코멘트가 1개 이상</b> 있어야 반려 가능(무엇을 고칠지 없이 반려 불가)`,
         `<b>보충 코멘트</b> — 이미 반려된 스펙에 상태 변경 없이 코멘트만 더할 때 <code>💬 코멘트 추가</code> 사용`,
@@ -371,13 +387,18 @@
   // 리뷰 모드 상태 (디자이너가 spec_in_review spec에 코멘트 달 때)
   let reviewState = null; // { featureId, comments: [{section, body}] }
 
-  function openDoc(f) {
-    const body = f.specBody;
+  // kind: 'spec' | 'checklist'. 디자이너 컨펌 게이트는 **spec 전용** —
+  // 품질 체크리스트는 개발자 자가검증 산출물이라 코멘트·승인/반려 없이 읽기만 한다.
+  function openDoc(f, kind) {
+    const isChecklist = kind === 'checklist';
+    const body = isChecklist ? f.checklistBody : f.specBody;
     // 검토중 = 결정(승인/반려) 모드, 반려됨 = 보충 코멘트(append) 모드
-    const decisionMode = auth.isDesigner() && f.status === 'spec_in_review';
-    const appendMode = auth.isDesigner() && f.status === 'spec_changes_requested';
+    const decisionMode = !isChecklist && auth.isDesigner() && f.status === 'spec_in_review';
+    const appendMode = !isChecklist && auth.isDesigner() && f.status === 'spec_changes_requested';
     const reviewMode = decisionMode || appendMode;
-    $('#doc-modal-title').textContent = `${f.title} · spec ${f.specVersion || ''}`;
+    $('#doc-modal-title').textContent = isChecklist
+      ? `${f.title} · 품질 체크리스트`
+      : `${f.title} · spec ${f.specVersion || ''}`;
     const bodyEl = $('#doc-modal-body');
     bodyEl.innerHTML = (body && body.trim()) ? mdToHtml(body) : '<div class="feat-sub">본문 없음.</div>';
 
@@ -536,17 +557,20 @@
         <h3>문서</h3>
         <div class="doc-row">
           <button class="btn-primary" data-doc="spec">📄 spec 보기</button>
+          <button class="btn-ghost" data-doc="checklist"${f.checklistBody ? '' : ' disabled'}>📋 체크리스트 보기</button>
         </div>
         <div class="feat-sub" style="margin-top:6px">
           상태 ${esc(f.specStatus || '-')} · 기준 PRD ${esc(f.prdVersion || '-')} · 작성자 ${esc(userName(f.createdBy))}
         </div>
+        ${checklistNoticeHtml(f)}
         ${draftNoticeHtml(f)}
       </div>
       ${versionHistoryHtml(f, isDev)}
       ${reviewsHtml(f)}`;
 
-    // 문서 보기
-    panel.querySelectorAll('button[data-doc]').forEach((b) => b.addEventListener('click', () => openDoc(f)));
+    // 문서 보기 — spec 은 (역할·상태에 따라) 리뷰 모드, 체크리스트는 항상 읽기 전용
+    panel.querySelectorAll('button[data-doc]').forEach((b) =>
+      b.addEventListener('click', () => openDoc(f, b.dataset.doc)));
     // 변경이력 사유 편집(개발자)
     panel.querySelectorAll('button[data-edit-ver]').forEach((b) =>
       b.addEventListener('click', () => editVersionReason(f, b.dataset.editVer, b.dataset.reason)));
@@ -574,6 +598,21 @@
   function nodeIdOf(url) {
     const m = /[?&]node-id=([^&#]+)/.exec(url);
     return m ? decodeURIComponent(m[1]) : '';
+  }
+
+  // 품질 체크리스트 요약 — `/mino-spec` 의 1차 방어선 결과. 검수 대상은 아니지만 판단 재료로 노출한다.
+  function checklistNoticeHtml(f) {
+    if (!f.checklistBody) {
+      return `<div class="spec-draft-note">품질 체크리스트 없음 — <code>spec 수정</code>에서
+        <code>quality/spec-checklist.md</code> 를 함께 첨부하세요.</div>`;
+    }
+    const c = SPEC.parseChecklistMeta(f.checklistBody);
+    const st = c.status === 'PASS'
+      ? badge('체크리스트 PASS', 'green', '로컬 /mino-spec 품질 검증 통과')
+      : badge(`체크리스트 ${c.status || '-'}`, 'amber', '품질 검증을 통과하지 못한 스펙입니다');
+    const ver = c.targetVersion ? ` · 대상 ${esc(c.targetVersion)}` : '';
+    return `<div class="checklist-line">${st}
+      <span class="feat-sub">${c.checked}/${c.total} 통과${ver}</span></div>`;
   }
 
   // 미완성 신호(DRAFT · [TBD] 잔여)를 상세에 노출 — 검수자가 "무엇을 확정해야 하는지" 바로 알게 한다.
@@ -730,25 +769,43 @@
     }
     return out.join('');
   }
+  // 스냅샷은 spec 본문과 체크리스트를 함께 담으므로 문서별로 변경분을 나눠 본다.
+  let diffCtx = null; // { f, fromVer, toVer, tab: 'spec'|'checklist' }
   function openDiff(f, fromVer, toVer) {
+    diffCtx = { f, fromVer, toVer, tab: 'spec' };
+    $('#diff-modal-title').textContent = `변경분 · ${fromVer} → ${toVer}`;
+    renderDiff();
+    openModal('diff-modal');
+  }
+  function renderDiff() {
+    const { f, fromVer, toVer, tab } = diffCtx;
     const log = f.versionLog || [];
     const from = log.find((e) => e.version === fromVer);
     const to = log.find((e) => e.version === toVer);
-    $('#diff-modal-title').textContent = `변경분 · ${fromVer} → ${toVer}`;
     const el = $('#diff-modal-body');
+    const key = tab === 'checklist' ? 'checklistBody' : 'body';
+    const has = (e, k) => !!(e && e[k]);
+    const tabs = DOC_KINDS.map((d) => {
+      const enabled = has(from, d.snapKey) || has(to, d.snapKey);
+      return `<button class="doc-tab ${tab === d.kind ? 'active' : ''}" data-difftab="${d.kind}"${enabled ? '' : ' disabled'}>${d.icon} ${esc(d.label)}</button>`;
+    }).join('');
+    let inner;
     if (!from || !to) {
-      el.innerHTML = '<div class="feat-sub">버전을 찾을 수 없습니다.</div>';
-    } else if (!from.body && !to.body) {
-      el.innerHTML = '<div class="feat-sub">이 버전들에는 스냅샷이 없습니다(자동 버저닝 이전 생성). 이후 버전부터 변경분을 볼 수 있습니다.</div>';
+      inner = '<div class="feat-sub">버전을 찾을 수 없습니다.</div>';
+    } else if (!from[key] && !to[key]) {
+      inner = tab === 'checklist'
+        ? '<div class="feat-sub">이 버전들에는 체크리스트 스냅샷이 없습니다(체크리스트 업로드 도입 이전 생성).</div>'
+        : '<div class="feat-sub">이 버전들에는 스냅샷이 없습니다(자동 버저닝 이전 생성). 이후 버전부터 변경분을 볼 수 있습니다.</div>';
     } else {
-      const rows = V2.diffLines(from.body || '', to.body || '');
-      const changed = rows.some((r) => r.t !== '=');
-      el.innerHTML = changed
+      const rows = V2.diffLines(from[key] || '', to[key] || '');
+      inner = rows.some((r) => r.t !== '=')
         ? `<div class="diff-legend"><span class="del">− ${esc(fromVer)}</span> <span class="add">+ ${esc(toVer)}</span></div>`
           + `<div class="diff-view">${diffBodyHtml(rows)}</div>`
-        : '<div class="feat-sub">두 버전의 본문이 동일합니다(변경 이력 표 제외).</div>';
+        : '<div class="feat-sub">두 버전의 본문이 동일합니다.</div>';
     }
-    openModal('diff-modal');
+    el.innerHTML = `<div class="doc-tabs">${tabs}</div>${inner}`;
+    el.querySelectorAll('[data-difftab]').forEach((b) =>
+      b.addEventListener('click', () => { diffCtx.tab = b.dataset.difftab; renderDiff(); }));
   }
 
   async function editVersionReason(f, version, current) {
@@ -759,21 +816,34 @@
     if (window.MASC.BACKEND === 'mock') renderAll();
   }
 
-  // ===================== Upload (spec 붙여넣기 + 검증 + base 브랜치 선택) =====================
-  let uploadCtx = null; // { featureId|null, baseBranch }
+  // ===================== Upload (문서 2종 첨부 + 검증 + base 브랜치 선택) =====================
+  // 붙여넣기 편집창은 폐기했다 — 문서를 만드는 것도 고치는 것도 로컬 `/mino-spec` 의 일이고,
+  // 대시보드는 그 산출물 파일을 그대로 받아 검증·검수·PR 로 흘려보내기만 한다.
+  let uploadCtx = null; // { featureId|null, baseBranch, specBody, checklistBody, names, kept }
+  let previewTab = 'spec';
+  let pickTarget = null; // 슬롯의 [파일 선택] 이 지정한 대상 (null = 파일명·본문으로 자동 판별)
+
   function openUpload(f) {
     if (!auth.isDeveloper()) { alert('spec 업로드/수정은 개발자만 가능합니다.'); return; }
-    uploadCtx = { featureId: f ? f.featureId : null, baseBranch: f ? (f.baseBranch || '') : '' };
+    uploadCtx = {
+      featureId: f ? f.featureId : null,
+      baseBranch: f ? (f.baseBranch || '') : '',
+      specBody: f ? (f.specBody || '') : '',
+      checklistBody: f ? (f.checklistBody || '') : '',
+      names: {},                                          // 이번에 첨부한 파일명
+      kept: { spec: !!(f && f.specBody), checklist: !!(f && f.checklistBody) }, // 기존 문서 유지 여부
+    };
+    previewTab = 'spec';
+    pickTarget = null;
     $('#upload-title').textContent = f ? `spec 수정 · ${f.title}` : '새 스펙 업로드';
     uploadMsg('', false);
-    const body = f ? f.specBody : '';
-    const placeholder = '# 스펙 명세서: 기능 이름\\n\\n**대상 스펙 경로**: `docs/specs/now-openchat`\\n\\n**상태**: CREATED\\n\\n**버전**: 1.0.0\\n\\n## 1. 유저 시나리오 …';
     $('#upload-body').innerHTML = `
       <div class="paste-help">
-        <span>로컬 <code>/mino-spec</code> 산출물 <code>docs/specs/{feature}/spec.md</code> 전문을 붙여넣거나 파일을 드롭하세요.
-        헤더 <code>**대상 스펙 경로**</code>에서 slug를, <code>**버전**</code>에서 버전을 읽습니다.
-        <code>**상태**: DRAFT</code>이거나 <code>[TBD]</code>가 남아 있어도 업로드할 수 있습니다 — 경고만 표시되며,
-        오히려 디자이너 검수가 필요한 상태입니다.</span>
+        <span>로컬 <code>/mino-spec</code> 산출물 <b>2개를 모두</b> 첨부하세요 —
+        <code>docs/specs/{feature}/spec.md</code> 와 <code>quality/spec-checklist.md</code>.
+        spec 헤더 <code>**대상 스펙 경로**</code>에서 slug를, <code>**버전**</code>에서 버전을 읽습니다.
+        <code>**상태**: DRAFT</code>·<code>[TBD]</code> 잔여·체크리스트 <code>FAILED</code> 여도 업로드할 수 있습니다 —
+        경고만 표시되며, 오히려 디자이너 검수가 필요한 상태입니다.</span>
       </div>
       <div class="upload-grid">
         <div class="upload-editor">
@@ -784,26 +854,79 @@
             <button class="btn-add" type="button" id="btn-base-reload" title="다시 조회">↻</button>
           </div>
           <div id="up-base-hint" class="feat-sub" style="margin-bottom:10px"></div>
-          <div id="dropzone" class="dropzone">spec.md 파일을 여기로 drag-drop
-            <input type="file" id="file-input" accept=".md" hidden />
+          <div id="dropzone" class="dropzone">두 파일을 여기로 drag-drop (한 번에 선택 가능)
+            <input type="file" id="file-input" accept=".md" multiple hidden />
             <button class="btn-add" type="button" id="btn-pick">파일 선택</button></div>
-          <textarea id="up-spec" class="paste-area paste-tall" placeholder="${placeholder}">${esc(body)}</textarea>
+          <div class="up-slots" id="up-slots"></div>
         </div>
         <div class="upload-preview">
-          <div class="lbl">미리보기</div>
+          <div class="preview-head">
+            <div class="lbl">미리보기</div>
+            <div class="doc-tabs" id="up-tabs"></div>
+          </div>
           <div id="up-preview" class="md up-preview"></div>
         </div>
       </div>`;
     wireDropzone();
-    $('#up-spec').addEventListener('input', schedulePreview);
     $('#up-base').addEventListener('change', () => {
       uploadCtx.baseBranch = $('#up-base').value;
       renderBaseHint();
     });
     $('#btn-base-reload').addEventListener('click', () => loadBaseBranches(true));
-    renderPreview();
+    renderSlots(); renderTabs(); renderPreview();
     loadBaseBranches(false);
     openModal('upload-modal');
+  }
+
+  // ── 첨부 슬롯 ──
+  const bodyOf = (kind) => uploadCtx[kind === 'spec' ? 'specBody' : 'checklistBody'] || '';
+
+  // 첨부된 문서에서 한 줄 요약을 만든다 — 잘못된 파일을 넣었는지 저장 전에 눈으로 잡기 위함.
+  function slotSummary(kind, body) {
+    if (kind === 'spec') {
+      const m = SPEC.parseMeta(body);
+      return [m.slug || 'slug ?', m.specVersion ? `v${m.specVersion}` : '버전 ?', `상태 ${m.specStatus || '?'}`]
+        .map(esc).join(' · ');
+    }
+    const c = SPEC.parseChecklistMeta(body);
+    return [`상태 ${c.status || '?'}`, `${c.checked}/${c.total} 통과`,
+      c.targetVersion ? `대상 v${c.targetVersion}` : '대상 버전 ?'].map(esc).join(' · ');
+  }
+
+  function renderSlots() {
+    $('#up-slots').innerHTML = DOC_KINDS.map((d) => {
+      const body = bodyOf(d.kind);
+      const filled = !!body.trim();
+      const tag = !filled ? badge('미첨부', 'red')
+        : (uploadCtx.kept[d.kind] ? badge('기존 문서 유지', 'gray') : badge('첨부됨', 'green'));
+      const line = filled
+        ? `<div class="slot-name mono">${esc(uploadCtx.names[d.kind] || d.path)}</div>
+           <div class="slot-meta feat-sub">${slotSummary(d.kind, body)}</div>`
+        : `<div class="slot-meta feat-sub">${esc(d.path)} — 필수</div>`;
+      return `<div class="up-slot ${filled ? 'filled' : 'empty'}">
+        <div class="slot-ico">${d.icon}</div>
+        <div class="slot-main">
+          <div class="slot-title">${esc(d.label)} ${tag}<span class="slot-hint feat-sub">${esc(d.hint)}</span></div>
+          ${line}
+        </div>
+        <button class="btn-add" type="button" data-pick="${d.kind}">${filled ? '교체' : '파일 선택'}</button>
+      </div>`;
+    }).join('');
+    $('#up-slots').querySelectorAll('[data-pick]').forEach((b) =>
+      b.addEventListener('click', () => { pickTarget = b.dataset.pick; $('#file-input').click(); }));
+  }
+
+  // ── 프리뷰 탭 (렌더러는 문서 뷰어와 동일한 mdToHtml) ──
+  function renderTabs() {
+    // 비어 있는 문서 탭이 선택돼 있으면 내용이 있는 쪽으로 옮긴다
+    if (!bodyOf(previewTab).trim()) {
+      const other = DOC_KINDS.find((d) => bodyOf(d.kind).trim());
+      if (other) previewTab = other.kind;
+    }
+    $('#up-tabs').innerHTML = DOC_KINDS.map((d) =>
+      `<button class="doc-tab ${previewTab === d.kind ? 'active' : ''}" data-tab="${d.kind}"${bodyOf(d.kind).trim() ? '' : ' disabled'}>${d.icon} ${esc(d.label)}</button>`).join('');
+    $('#up-tabs').querySelectorAll('[data-tab]').forEach((b) =>
+      b.addEventListener('click', () => { previewTab = b.dataset.tab; renderTabs(); renderPreview(); }));
   }
 
   // base 브랜치 목록 — GitHub API 조회(Functions). 실패해도 업로드 자체는 막지 않고 수기 입력 폴백.
@@ -844,56 +967,107 @@
       : 'base 브랜치를 선택해야 저장할 수 있습니다.';
   }
 
-  // ── 라이브 마크다운 프리뷰 (업로드 모달) ──
-  let previewTimer = null;
-  function schedulePreview() { clearTimeout(previewTimer); previewTimer = setTimeout(renderPreview, 180); }
   function renderPreview() {
     const el = $('#up-preview'); if (!el) return;
-    const body = ($('#up-spec') && $('#up-spec').value) || '';
-    el.innerHTML = body.trim() ? mdToHtml(body) : '<div class="feat-sub">내용을 입력하면 여기에 렌더됩니다.</div>';
+    const body = bodyOf(previewTab);
+    el.innerHTML = body.trim() ? mdToHtml(body) : '<div class="feat-sub">파일을 첨부하면 여기에 렌더됩니다.</div>';
   }
+
   function wireDropzone() {
     const dz = $('#dropzone'); const fi = $('#file-input');
-    $('#btn-pick').addEventListener('click', () => fi.click());
-    fi.addEventListener('change', () => handleFiles(fi.files));
-    ['dragover', 'dragenter'].forEach((ev) => dz.addEventListener(ev, (e) => { e.preventDefault(); dz.classList.add('over'); }));
-    ['dragleave', 'drop'].forEach((ev) => dz.addEventListener(ev, (e) => { e.preventDefault(); dz.classList.remove('over'); }));
-    dz.addEventListener('drop', (e) => handleFiles(e.dataTransfer.files));
+    $('#btn-pick').addEventListener('click', () => { pickTarget = null; fi.click(); });
+    fi.addEventListener('change', () => { handleFiles(fi.files, pickTarget); fi.value = ''; pickTarget = null; });
+    // 드롭은 모달 본문 전체에서 받는다 — 두 파일을 한 번에 던질 수 있게.
+    const zone = $('#upload-body');
+    ['dragover', 'dragenter'].forEach((ev) => zone.addEventListener(ev, (e) => { e.preventDefault(); dz.classList.add('over'); }));
+    ['dragleave', 'drop'].forEach((ev) => zone.addEventListener(ev, (e) => { e.preventDefault(); dz.classList.remove('over'); }));
+    zone.addEventListener('drop', (e) => handleFiles(e.dataTransfer.files, null));
   }
-  function handleFiles(fileList) {
-    Array.from(fileList || []).forEach((file) => {
-      if (!/\.md$/i.test(file.name)) return;
+
+  // 어느 슬롯에 넣을지 판별한다. 파일명보다 본문 H1 을 먼저 믿는다 —
+  // 파일명은 사용자가 바꿔도 템플릿 H1 은 스킬이 고정하기 때문.
+  function classifyDoc(name, text) {
+    if (/^#\s*Spec\s*품질\s*체크리스트/im.test(text)) return 'checklist';
+    if (/^#\s*스펙\s*명세서/im.test(text)) return 'spec';
+    if (/checklist/i.test(name)) return 'checklist';
+    if (/(^|\/)spec\.md$/i.test(name)) return 'spec';
+    return null;
+  }
+
+  function handleFiles(fileList, forceKind) {
+    const files = Array.from(fileList || []).filter((f) => /\.md$/i.test(f.name));
+    if (!files.length) return uploadMsg('.md 파일만 첨부할 수 있습니다.');
+    let pending = files.length;
+    const unknown = [];
+    const done = () => {
+      if (--pending) return;
+      renderSlots(); renderTabs(); renderPreview();
+      uploadMsg(unknown.length
+        ? `판별할 수 없는 파일: ${unknown.join(' · ')} — 슬롯의 [파일 선택]으로 직접 지정하세요.`
+        : '', !!unknown.length);
+    };
+    files.forEach((file) => {
       const reader = new FileReader();
-      reader.onload = () => { $('#up-spec').value = reader.result; renderPreview(); };
+      reader.onload = () => {
+        const text = String(reader.result || '');
+        const kind = forceKind || classifyDoc(file.name, text);
+        if (!kind) unknown.push(file.name);
+        else {
+          uploadCtx[kind === 'spec' ? 'specBody' : 'checklistBody'] = text;
+          uploadCtx.names[kind] = file.name;
+          uploadCtx.kept[kind] = false;
+          previewTab = kind;
+        }
+        done();
+      };
+      reader.onerror = () => { unknown.push(file.name); done(); };
       reader.readAsText(file);
     });
   }
+
   function uploadMsg(t, err = true) { const el = $('#upload-msg'); el.textContent = t; el.classList.toggle('error', err); }
 
+  // 검증 결과를 문서별로 묶어 보여준다 — 어느 파일을 고쳐야 하는지가 바로 보이게.
+  function issuesHtml(groups) {
+    const block = (cls, label, list) =>
+      `<div class="${cls}"><div class="lbl">${label}</div>` +
+      groups.filter((g) => g[list].length).map((g) =>
+        `<div class="up-doc-group"><div class="up-doc-label mono">${esc(g.label)}</div>` +
+        g[list].map((x) => `<div class="${cls === 'up-errors-box' ? 'up-err' : 'up-warn'}"><span class="ecode">${x.code}</span> ${esc(x.msg)}</div>`).join('') +
+        '</div>').join('') + '</div>';
+    const n = (list) => groups.reduce((a, g) => a + g[list].length, 0);
+    let html = '';
+    if (n('errors')) html += block('up-errors-box', `구조 검증 실패 ${n('errors')}건`, 'errors');
+    // 경고(DRAFT · [TBD] · 체크리스트 미통과)는 저장을 막지 않는다 — 미완성일수록 검수가 필요하다는 게 이 대시보드의 목적.
+    if (n('warnings')) html += block('up-warns', `검수 필요 항목 ${n('warnings')}건 (업로드는 진행됩니다)`, 'warnings');
+    return html;
+  }
+
   async function saveUpload() {
-    const specBody = $('#up-spec').value || '';
-    if (!specBody.trim()) return uploadMsg('붙여넣은 내용이 없습니다.');
+    const specBody = uploadCtx.specBody || '';
+    const checklistBody = uploadCtx.checklistBody || '';
+    if (!specBody.trim()) return uploadMsg('spec.md 를 첨부하세요.');
+    if (!checklistBody.trim()) return uploadMsg('품질 체크리스트(quality/spec-checklist.md)를 함께 첨부하세요.');
     if (!uploadCtx.baseBranch) return uploadMsg('대상 base 브랜치를 선택하세요.');
-    const res = V.validateSpec(specBody);
+
+    const rs = V.validateSpec(specBody);
+    const rc = V.validateChecklist(checklistBody, rs.meta);
+    const groups = [
+      { label: 'spec.md', errors: rs.errors, warnings: rs.warnings || [] },
+      { label: 'quality/spec-checklist.md', errors: rc.errors, warnings: rc.warnings || [] },
+    ];
     const errBox = $('#up-errors');
-    const warns = res.warnings || [];
-    // 경고(DRAFT · [TBD])는 저장을 막지 않는다 — 미완성일수록 검수가 필요하다는 게 이 대시보드의 목적.
-    const warnHtml = warns.length
-      ? `<div class="up-warns"><div class="lbl">검수 필요 항목 ${warns.length}건 (업로드는 진행됩니다)</div>` +
-        warns.map((w) => `<div class="up-warn"><span class="ecode">${w.code}</span> ${esc(w.msg)}</div>`).join('') + '</div>'
-      : '';
-    if (!res.ok) {
-      errBox.innerHTML = '<div class="up-errors-box"><div class="lbl">구조 검증 실패</div>' +
-        res.errors.map((e) => `<div class="up-err"><span class="ecode">${e.code}</span> ${esc(e.msg)}</div>`).join('') +
-        '</div>' + warnHtml;
-      uploadMsg(`검증 실패 ${res.errors.length}건 — 수정 후 다시 저장하세요.`);
+    errBox.innerHTML = issuesHtml(groups);
+    const errCount = rs.errors.length + rc.errors.length;
+    if (errCount) {
+      uploadMsg(`검증 실패 ${errCount}건 — 로컬에서 수정한 뒤 다시 첨부하세요.`);
       errBox.scrollIntoView({ block: 'nearest' }); // 모달이 스크롤돼 있어도 실패 사유가 보이게
       return;
     }
-    errBox.innerHTML = warnHtml;
-    uploadMsg(warns.length ? `경고 ${warns.length}건과 함께 저장 중…` : '저장 중…', false);
+    const warnCount = (rs.warnings || []).length + (rc.warnings || []).length;
+    uploadMsg(warnCount ? `경고 ${warnCount}건과 함께 저장 중…` : '저장 중…', false);
     const r = await features.saveSpec({
-      featureId: uploadCtx.featureId, specBody, baseBranch: uploadCtx.baseBranch,
+      featureId: uploadCtx.featureId, specBody, checklistBody, baseBranch: uploadCtx.baseBranch,
     });
     if (!r.ok) return uploadMsg(r.error || '저장 실패');
     closeModal('upload-modal');

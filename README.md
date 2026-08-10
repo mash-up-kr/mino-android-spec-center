@@ -21,10 +21,10 @@ Team-MINO-Android의 기능 스펙(spec)을 업로드하고,
 
 기획·디자인은 Figma에, 스펙 문서는 여기저기 흩어지고, "이 화면 확정된 거 맞아요?"를 매번 물어보던 흐름을 하나의 파이프라인으로 묶습니다.
 
-- **개발자**가 로컬 스킬(`/mino-spec`)로 만든 spec.md를 업로드하면,
-- 대시보드가 **구조를 기계 검증(S1–S6)**하고,
-- **디자이너가 유저 플로우 단위로 컨펌**(승인/반려+코멘트)하고,
-- 승인된 스펙은 **`docs/specs/{slug}/spec.md` PR로 자동 생성**되며 — **base는 `develop`이 아니라 그 이슈의 `…/base` 브랜치**,
+- **개발자**가 로컬 스킬(`/mino-spec`)로 만든 산출물 2개(`spec.md` + `quality/spec-checklist.md`)를 첨부하면,
+- 대시보드가 **구조를 기계 검증**(spec S1–S6 · 체크리스트 C1–C7)하고,
+- **디자이너가 유저 플로우 단위로 컨펌**(승인/반려+코멘트) — **검수 대상은 spec 하나**, 체크리스트는 읽기 전용 참고 자료,
+- 승인된 스펙은 **두 문서가 함께 PR로 자동 생성**되며 — **base는 `develop`이 아니라 그 이슈의 `…/base` 브랜치**,
 - PR이 머지/종료되면 **웹훅으로 상태가 되돌아오고**,
 - 컨펌 요청·승인·반려·무효화·머지는 **Discord로 역할 멘션 알림**이 갑니다.
 
@@ -45,7 +45,7 @@ spec_draft → spec_in_review → spec_approved → pr_open → merged
 
 | | 기능 | 설명 |
 |---|---|---|
-| 📤 | **스펙 업로드 + 구조 검증** | spec.md 붙여넣기/드롭. 필수 H2 4개·헤더 메타·FR/UX/SC ID·유저 플로우 구조·자리표시자 잔여 등 **S1–S6 기계 검증** 통과 시 생성. 상태 `DRAFT`·`[TBD]` 잔여는 **차단하지 않고 경고** — 확정이 필요한 스펙일수록 검수에 올린다 ([validation.md](docs/design/validation.md)) |
+| 📤 | **스펙 업로드 + 구조 검증** | `/mino-spec` 산출물 2개(`spec.md` + `quality/spec-checklist.md`)를 파일로 첨부(드롭 시 본문 H1으로 자동 분류). spec은 **S1–S6**, 체크리스트는 **C1–C7** 기계 검증 통과 시 생성. 상태 `DRAFT`·`[TBD]` 잔여·체크리스트 `FAILED`는 **차단하지 않고 경고** — 확정이 필요한 스펙일수록 검수에 올린다 ([validation.md](docs/design/validation.md)) |
 | ✅ | **디자이너 컨펌 게이트** | 유저 플로우/요구사항 단위 **인라인 코멘트**로 승인·반려. 검토 중에는 spec read-only 잠금 |
 | 🔀 | **base 브랜치 타겟 spec PR** | 승인 시 `<prefix>/<이슈번호>-<slug>/spec` 브랜치를 **이슈 base 브랜치에서 분기**해 커밋·PR 생성. base 목록은 GitHub API로 조회해 업로드 시 선택 |
 | 🔁 | **웹훅 상태 동기화** | PR merged/closed 이벤트를 HMAC 검증 후 수신 → Firestore 상태 자동 갱신 |

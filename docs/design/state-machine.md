@@ -2,7 +2,7 @@
 
 > 출처: [PRD](../PRD.md) 4.5 · 4.8 · 6장 · 8장
 > 상태: **구현 완료 (M0–M4 MVP, 실 백엔드 검증)** · v3 (plan 단계 제거 · base 브랜치 타겟) 기준
-> 단위: `docs/specs/{feature}/spec.md` 한 건이 **단일 `status`** 를 가진다.
+> 단위: `docs/specs/{feature}/` 한 묶음(`spec.md` + `quality/spec-checklist.md`)이 **단일 `status`** 를 가진다. 상태를 움직이는 건 spec 컨펌이고, 체크리스트는 같은 묶음에 실려 다닌다(검수 대상 아님).
 
 문서 "진실"은 Firestore(`features/{id}`)다. 레포 파일은 스냅샷이며 역수정하지 않는다.
 
@@ -13,7 +13,7 @@
 | plan 검토 단계 | `spec_approved → plan_drafted → pr_open` | **`plan_drafted` 폐기** — `spec_approved → pr_open` |
 | PR base 브랜치 | `develop` 고정 | 이슈별 `<prefix>/<이슈번호>-<slug>/base` |
 | PR head 브랜치 | `docs/spec-{slug}-{version}` | `<prefix>/<이슈번호>-<slug>/spec` |
-| 커밋 대상 | `spec.md` + `plan.md` + `assets/*` | **`spec.md` 만** |
+| 커밋 대상 | `spec.md` + `plan.md` + `assets/*` | **`spec.md` + `quality/spec-checklist.md`** (plan·assets 폐기) |
 | 버전 소유권 | 대시보드가 bump | **로컬 `/mino-spec` 스킬**이 소유, 대시보드는 읽기만 |
 
 plan/task 는 대시보드를 거치지 않고 같은 base 브랜치 아래 하위 작업 브랜치로 진행한다

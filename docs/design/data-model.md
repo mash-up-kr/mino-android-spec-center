@@ -15,14 +15,18 @@ features/{featureId}
   ├─ specStatus: string        # 헤더 `**상태**` (DRAFT | CREATED) — DRAFT 도 업로드 허용(경고 표시)
   ├─ prdVersion: string        # 헤더 `**기준 PRD 버전**` (PRD 없으면 '없음')
   ├─ baseBranch: string        # PR 타겟 `<prefix>/<이슈번호>-<slug>/base` — 업로드 시 GitHub API 목록에서 선택
-  ├─ versionLog: [{ version, level, reason, at, body }]  # 버전별 본문 스냅샷(append-only)
+  ├─ versionLog: [{ version, level, reason, at, body, checklistBody }]  # 버전별 본문 스냅샷(append-only)
   │    ├─ level: 'init' | 'major' | 'minor' | 'patch' | 'same'   # 직전 항목과의 semver 비교로 파생
   │    ├─ reason: string       # 개발자가 편집하는 메모 (기본 빈 값)
-  │    └─ body: string         # 그 버전 시점의 spec 본문 → 재검토 diff 용
+  │    ├─ body: string         # 그 버전 시점의 spec 본문 → 재검토 diff 용
+  │    └─ checklistBody: string  # 같은 시점의 체크리스트 본문 → diff 모달의 문서 탭
   ├─ figmaSources: string[]    # §1 `**Figma**:` 줄에서 자동 수집한 노드 URL
   ├─ prNumber: number | null   # Functions(Admin)만 설정 — 클라이언트는 그대로/null만 허용
   ├─ prUrl: string | null
   ├─ specBody: string          # spec.md 본문 (SoT) — 업로드된 원문 그대로. 대시보드가 가공하지 않는다
+  ├─ checklistBody: string     # quality/spec-checklist.md 본문 (SoT) — 업로드 필수, 검수 대상 아님
+  ├─ checklistStatus: string   # 체크리스트 헤더 `**상태**` (PASS | FAILED | DRAFT)
+  ├─ checklistTargetVersion: string  # 체크리스트 헤더 `**대상 스펙**` 의 spec 버전 (불일치 시 경고)
   ├─ reviews: [{ decision, comments, reviewerUid, reviewedAt }]  # 디자이너 컨펌 이력 (MVP: 배열 필드, 서브컬렉션 전환은 후속)
   │    ├─ decision: 'approved' | 'changes_requested' | 'comment'  # comment=상태변화 없는 보충 코멘트
   │    └─ comments: [{ section, body }]   # 섹션 인라인 코멘트
@@ -49,6 +53,16 @@ users/{uid}
 
 > 기존 문서는 lazy migration 으로 정리된다: 다음 spec 업로드 시 새 필드가 채워지고 삭제 필드는 참조하지 않는다. 남은 `planBody`/`assets` 값은 읽히지 않는 잔여 데이터다.
 
+### v3 → v3.1 필드 변경 (문서 2종 업로드)
+
+| 필드 | 처리 | 이유 |
+|---|---|---|
+| `checklistBody` | **신설** | `/mino-spec` 산출물이 2개다 — spec 과 품질 체크리스트를 함께 보관하고 함께 PR 에 싣는다 |
+| `checklistStatus`·`checklistTargetVersion` | **신설** | 체크리스트 헤더 메타. PR 본문 체크·상세 요약·버전 대조(C7)에 쓰인다 |
+| `versionLog[].checklistBody` | **신설** | 버전 스냅샷을 문서별로 diff 하기 위함 |
+
+> 업로드는 **둘 다 필수**다. 신규 생성 시 `checklistBody` 가 비어 있으면 클라이언트(`saveSpec`)와 보안 규칙(`allow create`) 양쪽에서 막힌다. 기존 feature 를 수정할 때 체크리스트를 다시 첨부하지 않으면 직전 본문이 유지되므로, 체크리스트 도입 이전에 만들어진 문서는 다음 업로드에서 자연히 채워진다.
+
 ### 비고
 - **버저닝 소유권은 스킬**: `specVersion`은 헤더 `**버전**` 값을 그대로 반영한다. 대시보드는 bump 하지 않고 `## 변경 이력` 표를 만들지도 주입하지도 않는다. 상세는 [state-machine.md](state-machine.md) §3.
 - `versionLog[].body`는 재검토 diff 전용 스냅샷이다. 같은 버전으로 재업로드하면 새 항목을 만들지 않고 마지막 항목의 스냅샷만 갱신한다.
@@ -65,12 +79,12 @@ users/{uid}
 
 | 리소스 | read | write |
 |---|---|---|
-| `features/{id}` | 로그인 사용자 | create=developer(본인·`spec_draft`·PR필드 null·`baseBranch` 지정) · update=역할별 전이 허용목록 |
+| `features/{id}` | 로그인 사용자 | create=developer(본인·`spec_draft`·PR필드 null·`baseBranch` 지정·`checklistBody` 비어있지 않음) · update=역할별 전이 허용목록 |
 | `users/{uid}` | 로그인 사용자(리뷰어 이름 표시) | 본인만 |
 | Storage `features/**` | 로그인 사용자 | **금지** (레거시 읽기 전용) |
 
 - **전이 허용목록**: 개발자/디자이너 각각 허용된 `(from→to)` 조합만 통과(`devTransitionOk`/`desTransitionOk`). `spec_in_review` 는 read-only(상태유지 수정 차단).
-- **필드 잠금**: `prNumber`/`prUrl` 등 PR 필드는 클라이언트가 임의값 못 넣음(그대로거나 null만). `pr_open`/`merged`/`pr_closed` 로의 전이는 **Functions(Admin SDK, 규칙 우회)** 전용 → 클라이언트 위조 불가.
+- **필드 잠금**: `prNumber`/`prUrl` 등 PR 필드는 클라이언트가 임의값 못 넣음(그대로거나 null만). `pr_open`/`merged`/`pr_closed` 로의 전이는 **Functions(Admin SDK, 규칙 우회)** 전용 → 클라이언트 위조 불가. 디자이너는 `specBody` 뿐 아니라 `checklistBody`·`checklistStatus`·`checklistTargetVersion` 도 건드릴 수 없다(`desContentLocked`) — 체크리스트는 검수 대상이 아니라 개발자 자가검증 산출물이기 때문.
 - `reviews` create(승인/반려/보충코멘트)는 designer만. 상태 전이 guard는 규칙으로 1차, 민감 전이(PR/Webhook)는 Function으로 2차.
 
 ## 4. 구 모델 → 신 모델 매핑 (완료된 마이그레이션 기록)

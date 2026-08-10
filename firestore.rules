@@ -29,13 +29,16 @@ service cloud.firestore {
     match /features/{featureId} {
       allow read: if signedIn();
 
-      // 생성: 개발자, 본인 명의, 초기 상태 spec_draft, PR 필드 비어있음, base 브랜치 지정
+      // 생성: 개발자, 본인 명의, 초기 상태 spec_draft, PR 필드 비어있음, base 브랜치 지정,
+      //       `/mino-spec` 산출물 2종(spec 본문 + 품질 체크리스트) 모두 첨부
       allow create: if isDeveloper()
         && request.resource.data.createdBy == request.auth.uid
         && request.resource.data.status == 'spec_draft'
         && request.resource.data.prNumber == null
         && request.resource.data.baseBranch is string
-        && request.resource.data.baseBranch != '';
+        && request.resource.data.baseBranch != ''
+        && request.resource.data.checklistBody is string
+        && request.resource.data.checklistBody != '';
 
       // ── 필드 잠금 헬퍼 (update 후 문서 request.resource.data vs 기존 resource.data) ──
       function unchanged(f) {
@@ -60,10 +63,13 @@ service cloud.firestore {
           || (to == 'spec_changes_requested' && from == 'spec_in_review')
           || (to == from && (from == 'spec_in_review' || from == 'spec_changes_requested'));
       }
-      // 디자이너는 spec 내용 변경 불가 — status·reviews·updatedAt 만 건드림
+      // 디자이너는 문서 내용 변경 불가 — status·reviews·updatedAt 만 건드림.
+      // 품질 체크리스트는 검수 대상이 아니라 개발자 자가검증 산출물이므로 함께 잠근다.
       function desContentLocked() {
         return unchanged('createdBy') && unchanged('slug') && unchanged('title')
           && unchanged('specBody') && unchanged('specVersion') && unchanged('specStatus')
+          && unchanged('checklistBody') && unchanged('checklistStatus')
+          && unchanged('checklistTargetVersion')
           && unchanged('prdVersion') && unchanged('versionLog')
           && unchanged('baseBranch') && unchanged('figmaSources')
           && unchanged('prNumber') && unchanged('prUrl');

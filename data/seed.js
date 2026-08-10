@@ -1,7 +1,8 @@
 /**
  * MASC seed (v3) — mock 데이터.
  * Firebase 연결 전 store.js가 읽는 초기 데이터. 신 모델(docs/design/data-model.md) 기준.
- * spec 본문은 Mino-Android `mino-sdd/template/spec-template.md` 구조를 따른다.
+ * spec 본문은 Mino-Android `mino-sdd/template/spec-template.md`,
+ * 체크리스트는 `mino-sdd/template/spec-checklist-template.md` 구조를 따른다.
  * 실연결 시 이 파일은 제거되고 Firestore가 SoT가 된다.
  */
 (function () {
@@ -187,6 +188,56 @@
     '- 프리로드 개수는 기본값 2개를 사용한다',
   ].join('\n');
 
+  // 데모용 품질 체크리스트 (mino-sdd/template/spec-checklist-template.md 구조).
+  // `/mino-spec` 이 spec.md 와 함께 산출하는 두 번째 파일 — 대시보드는 검수 대상이 아닌 참고 자료로 보관한다.
+  const checklist = (name, date, version, failed) => [
+    `# Spec 품질 체크리스트: ${name}`,
+    '',
+    '**목적**: 다음 단계로 넘어가기 전 Spec의 완성도와 품질을 검증한다',
+    '',
+    `**작성일**: ${date}`,
+    '',
+    `**대상 스펙**: [spec.md](../spec.md) - ${version}`,
+    '',
+    `**상태** : ${failed ? 'FAILED' : 'PASS'}`,
+    '',
+    '---',
+    '',
+    '## 스펙 품질 (Spec Quality)',
+    '',
+    '- [x] 구현 세부사항(언어, 프레임워크, API)이 없다',
+    '- [x] 사용자 가치와 비즈니스 요구에 초점이 맞춰져 있다',
+    '- [x] 비기술 이해관계자(기획자, 디자이너 등)가 읽을 수 있게 작성되었다',
+    '- [x] 필수 섹션이 모두 채워져 있다',
+    '',
+    '## 요구사항 완전성 (Requirement Completeness)',
+    '',
+    '- [x] `[TBD]` 마커가 남아 있지 않다',
+    '- [x] 요구사항이 검증 가능하고 모호하지 않다',
+    '- [x] 테스트 시나리오 및 완료조건이 모두 정의되어 있다',
+    `- [${failed ? ' ' : 'x'}] 엣지 케이스가 식별되어 있다`,
+    '- [x] 핵심 UX 규칙이 측정 가능하다',
+    '- [x] 핵심 UX 규칙이 기술 중립적이다 (구현 세부사항 없음)',
+    '- [x] 범위가 명확히 한정되어 있다',
+    '- [x] 의존성과 가정이 식별되어 있다',
+    '',
+    '## 스펙 완성도 (Spec Completeness)',
+    '',
+    '- [x] 모든 기능 요구사항에 해당하는 명확한 테스트 시나리오가 있다',
+    '- [x] 유저 시나리오가 주요 플로우를 포괄한다',
+    '- [x] 기능이 성공 기준에 정의된 측정 가능한 결과를 충족한다',
+    '- [x] 구현 세부사항이 명세로 새어 들어오지 않았다',
+    '',
+    '## 비고',
+    '',
+    failed
+      ? '- 엣지 케이스 미식별: 재생 중 네트워크 단절 시 처리가 §1에 없다 — 검수에서 확정 필요'
+      : '- 미완료로 표시된 항목은 spec 수정이 필요하다',
+  ].join('\n');
+
+  const OPENCHAT_CHECKLIST = checklist('지금 - 오픈채팅 목록', '2026-06-18', '1.0.0', false);
+  const SHORTS_CHECKLIST = checklist('지금 - 쇼츠', '2026-06-20', '1.0.0', true);
+
   window.MASC_SEED = {
     project: 'Team-MINO-Android',
     generatedAt: '2026-08-10',
@@ -226,9 +277,15 @@
         prNumber: null,
         prUrl: null,
         specBody: OPENCHAT_SPEC,
+        checklistBody: OPENCHAT_CHECKLIST,
+        checklistStatus: 'PASS',
+        checklistTargetVersion: '1.0.0',
         createdBy: 'jaesung',
         reviews: [],
-        versionLog: [{ version: '1.0.0', level: 'init', at: '2026-06-18', reason: '', body: OPENCHAT_SPEC }],
+        versionLog: [{
+          version: '1.0.0', level: 'init', at: '2026-06-18', reason: '',
+          body: OPENCHAT_SPEC, checklistBody: OPENCHAT_CHECKLIST,
+        }],
       },
       {
         featureId: 'now-shorts',
@@ -243,9 +300,15 @@
         prNumber: null,
         prUrl: null,
         specBody: SHORTS_SPEC,
+        checklistBody: SHORTS_CHECKLIST,
+        checklistStatus: 'FAILED',
+        checklistTargetVersion: '1.0.0',
         createdBy: 'eunseok',
         reviews: [],
-        versionLog: [{ version: '1.0.0', level: 'init', at: '2026-06-20', reason: '', body: SHORTS_SPEC }],
+        versionLog: [{
+          version: '1.0.0', level: 'init', at: '2026-06-20', reason: '',
+          body: SHORTS_SPEC, checklistBody: SHORTS_CHECKLIST,
+        }],
       },
     ],
   };

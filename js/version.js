@@ -6,6 +6,7 @@
  *   - 자동 bump · `## 변경 이력` 표 주입 · v0.1.0 강제는 모두 폐기.
  *   - 대시보드가 유지하는 것은 **버전별 본문 스냅샷 로그**뿐 — 재검토 시
  *     "지난 검토 이후 변경분" diff 를 만들기 위한 것이다.
+ *     스냅샷은 spec 본문과 품질 체크리스트를 함께 담는다(문서별로 diff).
  * MAJOR/MINOR/PATCH 뱃지는 직전 스냅샷과의 semver 비교로 표시 시점에 파생한다.
  */
 (function () {
@@ -36,19 +37,23 @@
     return false;
   }
 
+  const trimmed = (v) => (v == null ? '' : String(v).trim());
+
   /**
-   * 스냅샷 로그 항목 — { version, level, at, reason, body }
-   *   level  : 직전 항목 대비 파생 등급 (첫 항목은 'init')
-   *   reason : 개발자가 편집 가능한 메모 (기본 빈 값)
-   *   body   : 그 버전 시점의 spec 본문 스냅샷 (재검토 diff 용)
+   * 스냅샷 로그 항목 — { version, level, at, reason, body, checklistBody }
+   *   level         : 직전 항목 대비 파생 등급 (첫 항목은 'init')
+   *   reason        : 개발자가 편집 가능한 메모 (기본 빈 값)
+   *   body          : 그 버전 시점의 spec 본문 스냅샷 (재검토 diff 용)
+   *   checklistBody : 같은 시점의 품질 체크리스트 스냅샷 (문서별 diff 용)
    */
-  function logEntry(version, prevVersion, at, body, reason) {
+  function logEntry(version, prevVersion, at, body, reason, checklistBody) {
     return {
       version: version || '',
       level: prevVersion ? levelBetween(prevVersion, version) : 'init',
       at: at || '',
       reason: reason || '',
-      body: body == null ? '' : String(body).trim(),
+      body: trimmed(body),
+      checklistBody: trimmed(checklistBody),
     };
   }
 
@@ -58,12 +63,13 @@
    *   - 버전이 올라갔으면 새 항목 append
    *   - 버전이 그대로면 마지막 항목의 스냅샷만 갱신(같은 버전 내 재편집)
    */
-  function applySnapshot(log, version, at, body) {
+  function applySnapshot(log, version, at, body, checklistBody) {
     const list = (log || []).map((e) => Object.assign({}, e));
     const last = list[list.length - 1];
-    if (!last) return [logEntry(version, null, at, body)];
-    if (last.version !== version) return list.concat(logEntry(version, last.version, at, body));
-    last.body = body == null ? '' : String(body).trim();
+    if (!last) return [logEntry(version, null, at, body, '', checklistBody)];
+    if (last.version !== version) return list.concat(logEntry(version, last.version, at, body, '', checklistBody));
+    last.body = trimmed(body);
+    last.checklistBody = trimmed(checklistBody);
     last.at = at || last.at;
     return list;
   }
