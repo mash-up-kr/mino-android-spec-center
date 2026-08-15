@@ -73,9 +73,15 @@ C3는 **도달(reach)** 을 연다. C1(논의)과 붙어야 "팀이 상주하지
 
 ## 4b. 상황별 알림 UI 미리보기
 
-5가지 상황이 Discord에서 실제로 렌더링되는 모습 (실 payload 재현 — 라이브 페이지: [preview.html](https://mash-up-kr.github.io/mino-android-spec-center/docs/v2/notifications/preview.html)):
+10가지 상황이 Discord에서 실제로 렌더링되는 모습 (실 payload 재현 — 라이브 페이지: [preview.html](https://mash-up-kr.github.io/mino-android-spec-center/docs/v2/notifications/preview.html)):
 
-![상황별 Discord 알림 미리보기](../../images/notifications-preview.png)
+**① spec 파이프라인 전이 (1–5 · `notifyOnFeatureWrite`)** — 컨펌 요청 · 승인 · 반려 · 무효화 · 머지. 대상은 Android/Design.
+
+![spec 파이프라인 Discord 알림 미리보기](../../images/notifications-preview.png)
+
+**② PRD 트랙 (6–10 · `notifyOnPrdWrite` · `notifyOnPrdComment`)** — 등록 · MAJOR · MINOR · PATCH(무멘션) · 논의 @멘션. 등록·MAJOR·MINOR 는 **iOS·Node 까지 4개 역할**, MAJOR/MINOR 에는 **뒤처진 spec 목록**이 동봉된다.
+
+![PRD 트랙 Discord 알림 미리보기](../../images/notifications-prd-preview.png)
 
 ## 5. 시크릿 / 인프라
 

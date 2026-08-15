@@ -121,7 +121,7 @@ PRD 헤더는 `**키**: 값` 줄이 아니라 **마크다운 표**다.
 | **최종 수정일** | 2026-08-15 - 은석 |
 ```
 
-[spec-parse.js](../../js/spec-parse.js) `headerField` 는 `^\*\*이름\*\*\s*:` 를 찾으므로 **매칭되지 않는다.** `js/prd-parse.js` 에 `parseTableField(src, name)` 을 새로 둔다. 헤딩/섹션 헬퍼(`headings`·`coreTitle`·`parseTables`·`blockByRaw`)는 그대로 재사용한다.
+[spec-parse.js](../../js/spec-parse.js) `headerField` 는 `^\*\*이름\*\*\s*:` 를 찾으므로 **매칭되지 않는다.** `js/prd-parse.js`(`window.MASCPrd`) 에 `tableField(src, name)` 을 새로 뒀다. 헤딩/섹션 헬퍼(`headings`·`coreTitle`)는 그대로 재사용한다.
 
 > 템플릿의 섹션 제목은 H2 가 아니라 **H1**(`# 1. 서비스 개요 및 개발 방향`)이다. 문서 제목도 H1 이라 **첫 H1 = 제목, 이후 H1 = 섹션**으로 구분한다. `coreTitle` 이 `1. ` 숫자 접두사를 벗기므로 비교는 핵심 제목으로 한다.
 
@@ -244,8 +244,8 @@ match /prds/{prdId} {
 기존 3분할 워크스페이스(상태 목록 / feature 목록 / 상세)는 feature 전용이다. PRD 는 **헤더 진입 + 전용 모달**로 얹어 레이아웃을 건드리지 않는다.
 
 ```
-헤더:  [역할별 사용법] [스킬 안내] [상태 안내] │ 📘 PRD v1.2.0 · 💬 3 │ [필터 초기화] …
-                                              └─ 클릭 → PRD 모달
+헤더:  📘 PRD v1.2.0 · 💬 3 │ [역할별 사용법] [스킬 안내] [상태 안내] [필터 초기화] …
+       └─ 클릭 → PRD 모달
 ┌─ PRD 모달 (modal-xwide, 2단) ──────────────────────────────┐
 │ 제품 요구사항 문서 v1.2.0        [문서] [버전 이력] [연결된 스펙] │
 ├──────────────────────────┬─────────────────────────────────┤
@@ -262,7 +262,7 @@ match /prds/{prdId} {
 - **버전 이력 탭**: 버전 목록(등급 뱃지 · 날짜 · 메모) + from/to 선택 → 변경분
 - **연결된 스펙 탭**: 호환 등급 표 (🔴 먼저 정렬)
 - **업로드**: 개발자에게만 `PRD 업로드` 버튼 노출. 기존 업로드 모달을 슬롯 1개 구성으로 재사용
-- 좌측 사이드바 하단에 `📘 PRD v1.2.0` 한 줄 — 미등록이면 "PRD 미등록" 안내
+- **진입 지점 2곳(구현)**: ① 헤더 칩 — 등록 전이면 `📘 PRD 미등록`(warn 표시)이고 **개발자에게만** 보인다(디자이너에게는 올릴 것도 볼 것도 없으므로 숨김) · ② feature 상세의 `기준 PRD {버전}` 줄에 붙은 호환 뱃지 + `PRD 보기` 링크. 설계 초안의 "좌측 사이드바 한 줄"은 진입점이 셋으로 늘어 중복이라 **넣지 않았다**
 
 ## 10. 단계 체크리스트 (P8)
 
@@ -277,7 +277,7 @@ match /prds/{prdId} {
 - [x] `(FE)` `js/prd-parse.js` — `parseTableField` · `parseMeta` · 섹션/ID 수집 · **주석 스트립**
 - [x] `(FE)` [validate.js](../../js/validate.js) `validatePrd(body, prev)` — P1–P7
 - [x] `(FE)` store `prd.get/subscribe/save` — mock·firebase 양쪽. 저장은 **버전 낙관적 잠금**(§11-3)
-- [x] `(FE)` 업로드 모달(슬롯 1개) + 헤더 PRD 칩 + 사이드바 한 줄
+- [x] `(FE)` 업로드 모달(슬롯 1개) + 헤더 PRD 칩 + feature 상세 `PRD 보기` 링크 (사이드바 한 줄은 미채택 — §9)
 - [x] `(rules)` `prds/{id}` create/update — 개발자 한정
 - [x] `(FE)` [data/seed.js](../../data/seed.js) PRD 시드 (mock 모드 동작)
 

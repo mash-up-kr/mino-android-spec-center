@@ -1,7 +1,7 @@
 # 업로드 구조 검증 (구현 명세)
 
 > 출처: [PRD](../PRD.md) 4.2 · Mino-Android `mino-sdd/template/spec-template.md` · `mino-sdd/template/spec-checklist-template.md`
-> 상태: **구현 완료** ([js/validate.js](../../js/validate.js) `validateSpec` · `validateChecklist`) · v3.1 (문서 2종 첨부) 기준
+> 상태: **구현 완료** ([js/validate.js](../../js/validate.js) `validateSpec` · `validateChecklist` · `validatePrd`) · v3.1 (문서 2종 첨부) + P8 (PRD) 기준
 > 위치: 대시보드 업로드 시 **2차 방어선**. 1차 자가검수는 로컬 `/mino-spec`의 **품질 체크리스트**가 수행하고(통과 시 헤더 `상태: CREATED`), 내용 품질은 컨펌 게이트가 흡수한다. 대시보드는 **기계적 구조 검증만** 한다.
 > 단, **미완성 신호(`상태: DRAFT` · `[TBD]` 잔여)는 차단하지 않는다** — 확정되지 않은 항목이야말로 디자이너 검수에 올려야 하는 대상이고, 그게 이 대시보드의 목적이기 때문이다. 경고로 표시하고 저장은 진행한다.
 
@@ -69,6 +69,27 @@ spec 템플릿이 전면 교체되면서 검증 대상이 전부 달라졌다.
 >
 > `상태: FAILED` 를 막지 않는 이유는 DRAFT spec 을 막지 않는 이유와 같다 — 자가검증에서 걸린 항목이야말로 디자이너와 확정해야 할 지점이다. 대신 상세 패널 요약과 spec PR 본문 체크리스트에 미체크로 남는다.
 
+## 1-2. PRD 검증 항목 (P1–P7) — P8
+
+같은 `js/validate.js` 의 `validatePrd(body, prevVersion)` 이 상위 문서 PRD 를 검증한다. **정본 표는 [prd-track.md](prd-track.md) §3** 이고 여기서는 spec 검증과의 차이만 짚는다.
+
+| # | 항목 | 차단 |
+|---|---|---|
+| P1 | H1 `# 제품 요구사항 문서 (PRD): {제품명}` | 하드 |
+| P2 | 헤더 **표** (`버전` semver · `생성일`/`최종 수정일`) | 하드 |
+| P3 | 필수 섹션 4개 (H1, 순서) | 하드 |
+| P4 / P4-w | §2 목표의 `[SYS-00X]`·`[SCR-00X]` ≥1 / §2↔§3 대응 | 하드 / 소프트 |
+| P5 | 템플릿 자리표시자 잔여 0건 | 하드 |
+| P6 | `TBD:` 잔여 | 소프트 |
+| P7 | 버전 역행 차단 · 동일 버전은 확인 후 본문만 갱신 | 하드/확인 |
+
+spec 검증과 다른 점 넷:
+
+1. **헤더가 `**키**: 값` 줄이 아니라 마크다운 표**다. [spec-parse.js](../../js/spec-parse.js) `headerField` 로는 잡히지 않아 [prd-parse.js](../../js/prd-parse.js) `parseTableField` 를 따로 둔다. 섹션 제목도 H2 가 아니라 **H1**(첫 H1 = 문서 제목, 이후 H1 = 섹션).
+2. **검증 전 HTML 주석을 스트립한다.** PRD 템플릿은 `<!-- 예시) … -->` 안에 `[SCR-001]`·`[PRODUCT_NAME]` 류를 대량으로 담고 있어, 원문에 그대로 P4·P5 를 돌리면 정상 산출물이 전부 차단된다. 저장되는 `body` 는 원문 그대로다.
+3. **미확정 표기가 spec 과 다르다** — spec 은 `[TBD]`(대괄호), PRD 는 `TBD:`(접두). 둘 다 경고이고 차단하지 않는 이유는 §1 과 같다.
+4. **P7 은 저장본과의 대조**라 다른 항목처럼 문서 하나만 보고 판정할 수 없다. PRD 는 프로젝트당 1개라 버전 역행이 곧 덮어쓰기이기 때문이다(동시 업로드는 store 의 낙관적 잠금이 따로 막는다 — [prd-track.md](prd-track.md) §11-3).
+
 ## 2. 필수 H2 4개 (S2) — 순서·제목
 
 ```
@@ -96,7 +117,8 @@ spec 템플릿이 전면 교체되면서 검증 대상이 전부 달라졌다.
 
 - 파서는 **본문을 데이터로 파싱하지 않는다**. 헤딩 추출 + 헤더 필드(`**이름**: 값`) + 정규식 검사만.
 - `js/spec-parse.js`: `parseMeta(body)` → `{ slug, title, specVersion, specStatus, prdVersion, createdAt, updatedAt, figmaSources }`. 체크리스트는 같은 헬퍼(`headings`/`headerField`/`coreTitle`)를 재사용하는 `parseChecklistMeta(body)` → `{ title, status, createdAt, targetSpecLink, targetVersion, checked, total }`.
-- `js/validate.js`: `validateSpec(body)` · `validateChecklist(body, specMeta)` → `{ ok, errors: [{code, msg}], warnings: [{code, msg}], meta }`. 두 결과를 문서별로 묶어 한 박스에 표시한다. `errors`가 하나라도 있으면 저장을 막고, `warnings`는 노란 박스로 표시만 하고 저장은 진행한다(`ok`에 영향 없음). `specMeta`는 C7 대조용이라 생략하면 C7만 건너뛴다.
+- `js/prd-parse.js`(`window.MASCPrd`): PRD 전용 파서. `tableField(src, name)`(표 헤더 한 행) · `parseMeta(body)` → `{ title, version, versionRaw, createdDate, prdAuthor, lastAmendedDate, lastAmendedAuthor, sections, goalIds, specIds, itemIds, tbdCount }`. 헤딩 헬퍼(`S.headings`·`coreTitle`)는 `spec-parse.js` 것을 재사용하고, `strip(src)` 으로 **HTML 주석을 먼저 제거한 사본**에서 판정한다(§1-2). 섹션 diff 보조(`sectionDigest`·`changedSections`)도 여기 있다.
+- `js/validate.js`: `validateSpec(body)` · `validateChecklist(body, specMeta)` · `validatePrd(body, prevVersion)` → `{ ok, errors: [{code, msg}], warnings: [{code, msg}], meta }`. 두 결과를 문서별로 묶어 한 박스에 표시한다. `errors`가 하나라도 있으면 저장을 막고, `warnings`는 노란 박스로 표시만 하고 저장은 진행한다(`ok`에 영향 없음). `specMeta`는 C7 대조용이라 생략하면 C7만 건너뛴다.
 - 업로드 후에도 미완성 신호는 계속 보인다: 상세 패널 문서 섹션의 `spec-draft-note`(상태 DRAFT · 미해소 `[TBD]` N건)와 `checklist-line`(체크리스트 상태 · N/M 통과), 그리고 spec PR 본문 체크리스트의 미체크 항목(`functions/index.js` `prTemplate`).
 - **figmaSources 자동 수집**: §1의 `**Figma**:` 줄에 있는 `http(s)` 링크를 모아 `features.figmaSources`에 저장한다. 자리표시자(`(노드 URL)`)는 http 가 아니라 자동으로 걸러진다. 수기 입력란은 폐기됐다 — 출처는 본문이 단일 소스다.
 - 버전은 **구조만 확인**하고 값은 그대로 저장한다. bump·표 주입은 하지 않는다(소유권은 `/mino-spec`). 상세는 [state-machine.md](state-machine.md) §3.

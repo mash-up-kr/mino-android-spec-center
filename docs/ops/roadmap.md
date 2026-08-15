@@ -140,8 +140,8 @@
 - [x] **P8.1 업로드 + 검증** — `js/prd-parse.js`(표 헤더 파서·주석 스트립) · `validatePrd` P1–P7 · store `prd.*` · 업로드 모달 재사용 · `(rules)` 개발자 한정
 - [x] **P8.2 버전 이력 + diff** — `versions/{version}` 스냅샷 서브컬렉션 · from/to 임의 비교 · 섹션 변경 요약 · `diffLines` 성능 가드
 - [x] **P8.3 버전 호환** — 호환 등급 계산 · 목록/상세 뱃지 · "연결된 스펙" 표 · `prTemplate` 체크 줄. **표시 전용(차단 없음)**
-- [x] **P8.4 댓글** — `comments` 서브컬렉션(전원·섹션 앵커·소프트 삭제) + `(rules)`. **P5.1 스레드 컴포넌트의 발판**
-- [x] **P8.5 알림** — `(BE)` `notifyOnPrdWrite`(등급별 색·역할 멘션·뒤처진 spec 목록 동봉) · `?prd=` 딥링크
+- [x] **P8.4 댓글** — `comments` 서브컬렉션(전원·섹션 앵커·1단 답글·소프트 삭제) + `@` **자동완성 드롭다운**(삽입 토큰은 GitHub 핸들 — `mentions[]` 정규식이 ASCII 전용) + `(rules)`. **P5.1 스레드 컴포넌트의 발판**
+- [x] **P8.5 알림** — `(BE)` `notifyOnPrdWrite`(등급별 색·역할 멘션·뒤처진 spec 목록 동봉) · `notifyOnPrdComment`(멘션 포함분만) · `?prd=` 딥링크. **등록·MAJOR·MINOR 는 Android·Design·iOS·Node 4개 역할**(2026-08-15) — PRD 는 제품 전체 문서. spec 파이프라인 알림은 Android/Design 그대로
 - [ ] **P8.6 배포·e2e** — rules/Functions 재배포 · 실 `/mino-prd` 산출물 e2e (캐시 버스팅은 반영됨)
 
 **확정 결정(2026-08-15)**: ① **PRD 의 PR 자동 생성은 하지 않는다**(커밋 경로가 `/mino-prd`+평상시 PR 로 이미 존재 — 두 번째 경로는 SoT 를 가른다) · ② **업로드 권한은 개발자 한정**(댓글은 전원이므로 요구사항 충족).
