@@ -24,7 +24,8 @@
     const c = META.parseChecklistMeta(body);
     return { checklistStatus: c.status || '', checklistTargetVersion: c.targetVersion || '' };
   };
-  const today = () => new Date().toISOString().slice(0, 10);
+  // KST(UTC+9) 기준 날짜 — UTC 로 찍으면 한국 새벽 0~9시 작업이 전날로 기록된다.
+  const today = () => new Date(Date.now() + 9 * 3600 * 1000).toISOString().slice(0, 10);
   const serverTs = () => firebase.firestore.FieldValue.serverTimestamp();
   const arrayUnion = (v) => firebase.firestore.FieldValue.arrayUnion(v);
 

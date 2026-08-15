@@ -248,6 +248,8 @@ table.feature-table { width: 100%; border-collapse: collapse; }
   position: sticky; top: 0; background: var(--panel);
 }
 .modal-head h2 { margin: 0; font-size: 16px; }
+/* 헤더 우측 액션 — auto 마진으로 닫기 버튼 옆에 붙인다(가운데 힌트와 벌어지지 않게) */
+.head-dl { margin-left: auto; margin-right: 12px; padding: 4px 10px; font-size: 12px; }
 .modal-close { background: transparent; border: none; font-size: 24px; line-height: 1; color: var(--muted); }
 .modal-close:hover { color: var(--text); }
 .modal-body { padding: 20px 22px; }
@@ -366,12 +368,33 @@ table.feature-table { width: 100%; border-collapse: collapse; }
 .task-detail summary { font-size: 12px; color: var(--muted); cursor: pointer; }
 .task-detail .md { margin-top: 8px; padding-left: 4px; border-left: 2px solid var(--border); }
 
-/* plan·spec 마크다운 렌더 */
-.md { font-size: 13px; line-height: 1.6; }
-.md h3 { font-size: 13px; margin: 14px 0 5px; }
-.md ul { padding-left: 18px; margin: 4px 0; }
+/* spec·PRD 마크다운 렌더 — 마크다운 프리뷰(GitHub·IDE)와 같은 그림이 목표다 */
+.md { font-size: 13px; line-height: 1.7; word-break: break-word; }
+.md h1, .md h2, .md h3, .md h4, .md h5, .md h6 { margin: 18px 0 6px; line-height: 1.35; font-weight: 600; }
+.md > :first-child { margin-top: 0; }
+.md h1 { font-size: 19px; padding-bottom: 6px; border-bottom: 1px solid var(--border); }
+.md h2 { font-size: 16px; padding-bottom: 5px; border-bottom: 1px solid var(--border); }
+.md h3 { font-size: 14px; }
+.md h4, .md h5, .md h6 { font-size: 13px; }
+.md h5, .md h6 { color: var(--muted); }
+.md ul, .md ol { padding-left: 22px; margin: 6px 0; }
+.md li { margin: 2px 0; }
+.md li > ul, .md li > ol { margin: 2px 0; }
+.md li.task { list-style: none; margin-left: -18px; }
+.md li.task input { margin-right: 6px; vertical-align: -1px; }
 .md p { margin: 6px 0; }
 .md code { background: var(--bg); padding: 1px 5px; border-radius: 5px; font-size: 12px; }
+.md pre { background: var(--bg); border: 1px solid var(--border); border-radius: 8px;
+  padding: 10px 12px; margin: 8px 0; overflow-x: auto; }
+.md pre code { background: none; padding: 0; font-size: 12px; line-height: 1.5; white-space: pre; }
+.md blockquote {
+  margin: 8px 0; padding: 2px 0 2px 12px;
+  border-left: 3px solid var(--border); color: var(--muted);
+}
+.md blockquote > :first-child { margin-top: 0; }
+.md blockquote > :last-child { margin-bottom: 0; }
+.md hr { border: 0; border-top: 1px solid var(--border); margin: 14px 0; }
+.md del { color: var(--muted); }
 .md a { color: var(--accent); }
 .md img { max-width: 100%; height: auto; border: 1px solid var(--border); border-radius: 8px; margin: 6px 0; display: block; }
 .md img.asset-loading { min-height: 60px; background: var(--border); opacity: .5; }
@@ -546,12 +569,12 @@ table.feature-table { width: 100%; border-collapse: collapse; }
 /* Spec 미리보기 인라인 코멘트 (Notion식 리뷰 모드) */
 .review-hint { font-size: 12px; color: var(--accent); margin-left: 10px; }
 .review-count { font-size: 12px; color: var(--muted); align-self: center; }
-.review-mode h3 { position: relative; }
+.review-mode :is(h1, h2, h3, h4, h5, h6) { position: relative; }
 .cmt-add {
   border: none; background: transparent; cursor: pointer; font-size: 13px;
   opacity: 0; margin-left: 8px; vertical-align: middle; transition: opacity .12s;
 }
-.review-mode h3:hover .cmt-add, .cmt-add:focus { opacity: 1; }
+.review-mode :is(h1, h2, h3, h4, h5, h6):hover .cmt-add, .cmt-add:focus { opacity: 1; }
 .cmt-thread { margin: 6px 0 10px; }
 .cmt-input { display: flex; gap: 6px; margin: 6px 0; }
 .cmt-input input {
@@ -665,9 +688,9 @@ table.feature-table { width: 100%; border-collapse: collapse; }
 
 /* PRD 섹션 앵커 — 리뷰 모드(.review-mode)가 아니라 상시 노출이므로 기본 opacity:0 을 되돌린다.
    댓글이 달린 섹션은 항상 진하게 보여 "여기 논의가 있다"를 드러낸다. */
-.prd-doc h3 { position: relative; }
+.prd-doc :is(h1, h2, h3, h4, h5, h6) { position: relative; }
 .prd-doc .cmt-add { opacity: .38; }
-.prd-doc h3:hover .cmt-add,
+.prd-doc :is(h1, h2, h3, h4, h5, h6):hover .cmt-add,
 .prd-doc .cmt-add.has,
 .prd-doc .cmt-add.on { opacity: 1; }
 .prd-doc .cmt-add.has { color: var(--accent); font-weight: 600; }

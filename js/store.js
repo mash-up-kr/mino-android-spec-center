@@ -14,7 +14,8 @@
   const seed = window.MASC_SEED || { features: [], users: [], enums: {} };
 
   const STATUS = seed.enums.status || [];
-  const today = () => new Date().toISOString().slice(0, 10);
+  // KST(UTC+9) 기준 날짜 — UTC 로 찍으면 한국 새벽 0~9시 작업이 전날로 기록된다.
+  const today = () => new Date(Date.now() + 9 * 3600 * 1000).toISOString().slice(0, 10);
 
   // ===================== 저장소 =====================
   function loadFeatures() {

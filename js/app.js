@@ -354,40 +354,242 @@
 
   function select(id) { state.selectedId = id; renderCenter(); renderDetail(); }
 
-  // ---------- 작은 마크다운 렌더러 (문서 뷰어용) ----------
-  function mdToHtml(src) {
-    const e = (s) => String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;');
-    const inline = (s) => e(s)
-      .replace(/!\[([^\]]*)\]\(([^)\s]+)[^)]*\)/g, '<img src="$2" alt="$1" loading="lazy" />')
-      .replace(/\[([^\]]+)\]\(([^)\s]+)[^)]*\)/g, '<a href="$2" target="_blank" rel="noopener">$1</a>')
+  // ---------- 마크다운 렌더러 (문서 뷰어·업로드 프리뷰 공용) ----------
+  // 목표는 GitHub·IDE 의 마크다운 프리뷰와 같은 그림이다. 원문의 HTML 태그는 escape 한다 —
+  // 업로드 본문은 남이 만든 파일이라 태그가 살아나면 안 된다. 예외는 `<!-- -->` 주석으로,
+  // 프리뷰에서도 보이지 않으므로 블록째 건너뛴다(템플릿 안내문 제거를 겸한다).
+
+  // 섹션 앵커용 — 제목은 h1~h6 이 모두 나온다(예전 렌더러는 전부 h3 였다)
+  const MD_HEADS = 'h1, h2, h3, h4, h5, h6';
+  // 저장된 코멘트의 anchor 는 그때의 렌더 결과라, 렌더러가 바뀌어도 섹션을 잃지 않게 마커를 털고 비교한다
+  const sameSection = (a, b) => {
+    const key = (s) => String(s == null ? '' : s).replace(/[*_~`#]/g, '').replace(/\s+/g, ' ').trim();
+    return !!a && !!b && key(a) === key(b);
+  };
+
+  const MD_ITEM = /^(\s*)([-*+]|\d{1,9}[.)])\s+(.*)$/;
+  // 문단이 끊기는 자리 — 제목·인용·펜스·목록·구분선·주석
+  const MD_BREAK = /^ {0,3}(#{1,6}\s|>|`{3,}|~{3,}|<!--|([-*+]|\d{1,9}[.)])\s|([-*_])\s*(\3\s*){2,}\s*$)/;
+  const MD_SETEXT = /^ {0,3}(=+|-+)\s*$/;   // 윗줄 문단을 제목으로 올리는 밑줄
+  // 링크 목적지 — 괄호 한 겹까지 품는다 (…/wiki/Foo_(bar) 같은 URL)
+  const MD_IMG = /!\[([^\]]*)\]\(((?:[^()\s]|\([^()\s]*\))+)[^)]*\)/g;
+  const MD_LINK = /\[([^\]]+)\]\(((?:[^()\s]|\([^()\s]*\))+)[^)]*\)/g;
+  const mdIndent = (l) => l.replace(/\t/g, '    ').match(/^ */)[0].length;
+  const mdOrdered = (l) => { const m = MD_ITEM.exec(l); return !!m && /\d/.test(m[2]); };
+  const mdRow = (l) => /^\s*\|.*\|\s*$/.test(l);
+  const mdDiv = (l) => /^\s*\|?[\s:|-]+\|?\s*$/.test(l) && l.includes('-');
+  const mdCells = (l) => l.replace(/^\s*\|/, '').replace(/\|\s*$/, '').split('|').map((c) => c.trim());
+  const mdEsc = (s) => String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+  // `javascript:` 처럼 실행되는 스킴은 링크로 만들지 않는다 (입력은 남이 올린 문서다)
+  const mdUrl = (u) => {
+    const scheme = /^([a-z][a-z0-9+.-]*):/i.exec(u);
+    return !scheme || /^(https?|mailto)$/i.test(scheme[1]) ? u : '#';
+  };
+
+  function mdInline(src) {
+    const hold = [];
+    const keep = (html) => `\u0000${hold.push(html) - 1}\u0000`;
+    // 1) 코드 스팬 — 안쪽은 어떤 치환도 받으면 안 되므로 escape 전에 먼저 빼 둔다
+    let s = String(src).replace(/(`+)([^`]+)\1(?!`)/g, (m, t, code) =>
+      keep(`<code>${mdEsc(code.replace(/^ (.*) $/, '$1'))}</code>`));
+    s = mdEsc(s);
+    // 2) 이미지·링크. 링크는 여는 태그만 빼 두고 텍스트는 스트림에 남긴다(안쪽 강조가 살아난다)
+    s = s.replace(MD_IMG, (m, alt, url) =>
+      keep(`<img src="${mdUrl(url)}" alt="${alt}" loading="lazy" />`));
+    s = s.replace(MD_LINK, (m, text, url) =>
+      keep(`<a href="${mdUrl(url)}" target="_blank" rel="noopener">`) + text + '</a>');
+    // 3) 맨 URL 자동 링크 — 위에서 만든 링크의 href 는 빠져 있어 두 번 걸리지 않는다
+    s = s.replace(/(^|[\s(])(https?:\/\/[^\s<)]*[^\s<).,;:!?])/g, (m, pre, url) =>
+      pre + keep(`<a href="${url}" target="_blank" rel="noopener">${url}</a>`));
+    // 4) 강조. `_` 는 단어 안(spec_in_review)에서 기울이면 안 되므로 경계를 함께 본다
+    s = s
+      .replace(/\*\*\*([^*]+)\*\*\*/g, '<b><i>$1</i></b>')
       .replace(/\*\*([^*]+)\*\*/g, '<b>$1</b>')
-      .replace(/`([^`]+)`/g, '<code>$1</code>');
-    const isRow = (l) => /^\s*\|.*\|\s*$/.test(l);
-    const isDiv = (l) => /^\s*\|?[\s:|-]+\|?\s*$/.test(l) && l.includes('-');
-    const cells = (l) => l.replace(/^\s*\|/, '').replace(/\|\s*$/, '').split('|').map((c) => c.trim());
-    const lines = String(src).replace(/\r\n/g, '\n').split('\n');
-    let html = '', inList = false, inComment = false;
-    const closeList = () => { if (inList) { html += '</ul>'; inList = false; } };
+      .replace(/(^|[^\w*])\*([^\s*][^*]*?)\*(?!\w)/g, '$1<i>$2</i>')
+      .replace(/(^|[\s([{'‘])__([^_]+)__(?=$|[\s).,!?:;\]}'’])/g, '$1<b>$2</b>')
+      .replace(/(^|[\s([{'‘])_([^\s_][^_]*?)_(?=$|[\s).,!?:;\]}'’])/g, '$1<i>$2</i>')
+      .replace(/~~([^~]+)~~/g, '<del>$1</del>');
+    // 5) 줄 끝 공백 2개(또는 `\`)만 강제 줄바꿈. 그 외 이어지는 줄은 프리뷰처럼 한 문단으로 합친다
+    s = s.replace(/(?: {2,}|\\)\n/g, '<br />').replace(/\n/g, ' ');
+    return s.replace(/\u0000(\d+)\u0000/g, (m, n) => hold[+n]);
+  }
+
+  function mdToHtml(src) {
+    // 들여쓰기 탭은 프리뷰와 같이 4칸으로 편다 — 블록 판정이 공백 기준이다
+    return mdBlocks(String(src).replace(/\r\n?/g, '\n').split('\n')
+      .map((l) => l.replace(/^[ \t]+/, (w) => w.replace(/\t/g, '    '))));
+  }
+
+  function mdBlocks(lines) {
+    let html = '';
     for (let i = 0; i < lines.length; i++) {
       const line = lines[i];
-      // 템플릿 안내 주석(`<!-- 작업 필요: … -->`)은 여러 줄이라 블록으로 건너뛴다
-      if (inComment) { if (/-->/.test(line)) inComment = false; continue; }
-      if (/^\s*<!--/.test(line)) { if (!/-->/.test(line)) inComment = true; continue; }
-      if (/^\s*---+\s*$/.test(line)) { closeList(); html += '<hr />'; continue; }
-      if (isRow(line) && i + 1 < lines.length && isDiv(lines[i + 1])) {
-        closeList(); const head = cells(line); let rows = []; i += 2;
-        while (i < lines.length && isRow(lines[i]) && !isDiv(lines[i])) { rows.push(cells(lines[i])); i++; } i--;
-        html += '<table><thead><tr>' + head.map((c) => `<th>${inline(c)}</th>`).join('') + '</tr></thead><tbody>'
-          + rows.map((r) => '<tr>' + head.map((_, n) => `<td>${inline(r[n] || '')}</td>`).join('') + '</tr>').join('')
-          + '</tbody></table>'; continue;
+      if (!line.trim()) continue;
+      if (/^\s*<!--/.test(line)) { while (i < lines.length && !/-->/.test(lines[i])) i++; continue; }
+
+      // 코드 블록 — 안쪽은 원문 그대로 (마크다운 문법이 살아나면 안 된다)
+      const fence = /^ {0,3}(`{3,}|~{3,})\s*(.*)$/.exec(line);
+      if (fence) {
+        const close = new RegExp(`^ {0,3}${fence[1][0]}{${fence[1].length},}\\s*$`);
+        const body = [];
+        while (++i < lines.length && !close.test(lines[i])) body.push(lines[i]);
+        const lang = fence[2].trim().split(/\s+/)[0];
+        html += `<pre><code${lang ? ` class="lang-${mdEsc(lang)}"` : ''}>${mdEsc(body.join('\n'))}</code></pre>`;
+        continue;
       }
-      const h = line.match(/^(#{1,4})\s+(.*)/);
-      if (h) { closeList(); html += `<h3>${inline(h[2])}</h3>`; continue; }
-      if (/^\s*[-*]\s+/.test(line)) { if (!inList) { html += '<ul>'; inList = true; } html += `<li>${inline(line.replace(/^\s*[-*]\s+/, ''))}</li>`; continue; }
-      if (!line.trim()) { closeList(); continue; }
-      closeList(); html += `<p>${inline(line)}</p>`;
+      if (/^ {0,3}([-*_])\s*(\1\s*){2,}\s*$/.test(line)) { html += '<hr />'; continue; }
+
+      const h = /^ {0,3}(#{1,6})\s+(.*?)\s*#*\s*$/.exec(line);
+      if (h) { html += `<h${h[1].length}>${mdInline(h[2])}</h${h[1].length}>`; continue; }
+
+      // 인용 — 안쪽을 다시 블록으로 파싱한다(인용 안의 표·목록도 프리뷰처럼 산다)
+      if (/^ {0,3}>/.test(line)) {
+        const quote = [];
+        while (i < lines.length && lines[i].trim()
+          && (/^ {0,3}>/.test(lines[i]) || !MD_BREAK.test(lines[i]))) {
+          quote.push(lines[i].replace(/^ {0,3}>[ \t]?/, '')); i++;
+        }
+        i--;
+        html += `<blockquote>${mdBlocks(quote)}</blockquote>`;
+        continue;
+      }
+
+      // 표 — 구분선 행의 `:` 로 정렬까지 읽는다
+      if (mdRow(line) && mdDiv(lines[i + 1] || '')) {
+        const head = mdCells(line);
+        const align = mdCells(lines[i + 1]).map((c) =>
+          /^:.*:$/.test(c) ? ' style="text-align:center"' : /:$/.test(c) ? ' style="text-align:right"' : '');
+        const rows = [];
+        i += 2;
+        while (i < lines.length && mdRow(lines[i]) && !mdDiv(lines[i])) { rows.push(mdCells(lines[i])); i++; }
+        i--;
+        html += '<table><thead><tr>'
+          + head.map((c, n) => `<th${align[n] || ''}>${mdInline(c)}</th>`).join('')
+          + '</tr></thead><tbody>'
+          + rows.map((r) => '<tr>' + head.map((_, n) => `<td${align[n] || ''}>${mdInline(r[n] || '')}</td>`).join('') + '</tr>').join('')
+          + '</tbody></table>';
+        continue;
+      }
+
+      // 목록 — 항목 줄 + 그보다 깊게 들여쓴 이어짐 줄을 한 블록으로 모아 재귀 파싱한다
+      if (MD_ITEM.test(line)) {
+        const base = mdIndent(line);
+        const ordered = mdOrdered(line);
+        // 같은 높이에서 글머리 종류가 바뀌면(`-` ↔ `1.`) 프리뷰처럼 별개의 목록으로 끊는다
+        const sameKind = (l) => mdIndent(l) > base || mdOrdered(l) === ordered;
+        const block = [];
+        while (i < lines.length) {
+          const cur = lines[i];
+          if (!cur.trim()) {
+            const nx = lines[i + 1] || '';
+            if (!nx.trim() || (mdIndent(nx) <= base && !MD_ITEM.test(nx)) || !sameKind(nx)) break;   // 목록 끝
+            block.push(''); i++; continue;
+          }
+          if (block.length && ((!MD_ITEM.test(cur) && mdIndent(cur) <= base) || !sameKind(cur))) break;
+          block.push(cur); i++;
+        }
+        i--;
+        html += mdList(block, base);
+        continue;
+      }
+
+      // 문단 — 이어지는 줄은 프리뷰와 같이 한 문단으로 합친다
+      const para = [];
+      while (i < lines.length && lines[i].trim() && !MD_BREAK.test(lines[i])
+        && !(mdRow(lines[i]) && mdDiv(lines[i + 1] || ''))
+        && !(para.length && MD_SETEXT.test(lines[i]))) { para.push(lines[i]); i++; }
+      // 위 어느 블록도 아닌데 문단으로도 안 걸리는 줄 — 한 줄 문단으로 흘려보낸다(무한 루프 방지)
+      if (!para.length) { html += `<p>${mdInline(line)}</p>`; continue; }
+      // setext 제목 (`제목` 다음 줄이 `===` / `---`)
+      const setext = MD_SETEXT.exec(lines[i] || '');
+      if (setext) {
+        const n = setext[1][0] === '=' ? 1 : 2;
+        html += `<h${n}>${mdInline(para.join('\n'))}</h${n}>`;
+        continue;
+      }
+      i--;
+      html += `<p>${mdInline(para.join('\n'))}</p>`;
     }
-    closeList(); return html;
+    return html;
+  }
+
+  function mdList(block, base) {
+    const first = MD_ITEM.exec(block[0]);
+    const ordered = /\d/.test(first[2]);
+    const items = [];
+    let cur = null, loose = false, blanks = 0;
+    for (const raw of block) {
+      const m = MD_ITEM.exec(raw);
+      if (m && mdIndent(raw) <= base) {
+        if (cur && blanks) loose = true;
+        const task = /^\[([ xX])\]\s+/.exec(m[3]);
+        cur = {
+          lines: [task ? m[3].slice(task[0].length) : m[3]],
+          pad: m[1].length + m[2].length + 1,
+          task: task ? task[1] !== ' ' : null,
+        };
+        items.push(cur); blanks = 0; continue;
+      }
+      if (!cur) continue;
+      if (!raw.trim()) { blanks++; cur.lines.push(''); continue; }
+      blanks = 0;
+      cur.lines.push(raw.replace(new RegExp(`^ {0,${cur.pad}}`), ''));
+    }
+    const start = ordered ? +first[2].replace(/\D/g, '') : 0;
+    const tag = ordered ? 'ol' : 'ul';
+    const open = ordered && start !== 1 ? `<ol start="${start}">` : `<${tag}>`;
+    return open + items.map((it) => {
+      let inner = mdBlocks(it.lines);
+      if (!loose) inner = inner.replace(/^<p>([\s\S]*?)<\/p>/, '$1');   // 촘촘한 목록은 <p> 를 벗긴다
+      // 체크박스 목록 — 프리뷰처럼 실제 체크박스로 (문서는 읽기 전용이라 disabled)
+      if (it.task !== null) {
+        return `<li class="task"><input type="checkbox" disabled${it.task ? ' checked' : ''} /> ${inner}</li>`;
+      }
+      return `<li>${inner}</li>`;
+    }).join('') + `</${tag}>`;
+  }
+
+  // ---------- 문서 다운로드 ----------
+  // 업로드 본문은 Storage 가 아니라 Firestore 필드에 **마크다운 원문 그대로** 들어 있다.
+  // 화면이 이미 들고 있는 문자열을 그대로 파일로 내보내면 되므로 서버를 거치지 않는다.
+
+  // 윈도우·macOS 양쪽에서 안전한 파일명으로 — slug 에 이미 공백/특수문자가 섞여 들어온다
+  const fileSafe = (s) => String(s == null ? '' : s)
+    .replace(/[\\/:*?"<>|]+/g, '-').replace(/\s+/g, '-')
+    .replace(/-{2,}/g, '-').replace(/^[-.]+|[-.]+$/g, '');
+
+  // 받는 쪽이 어느 기능·어느 버전인지 알아보게 slug·버전을 접두로 붙인다.
+  // 뒷부분은 레포에 커밋되는 실제 파일명(DOC_KINDS.path)을 그대로 쓴다.
+  const docFileName = (f, kind, version) => [
+    fileSafe(f.slug || f.featureId),
+    fileSafe(version || f.specVersion),
+    kind === 'checklist' ? 'spec-checklist' : 'spec',
+  ].filter(Boolean).join('_') + '.md';
+
+  const prdFileName = (version) => ['prd', fileSafe(version)].filter(Boolean).join('_') + '.md';
+
+  function downloadText(name, text) {
+    const url = URL.createObjectURL(new Blob([text], { type: 'text/markdown;charset=utf-8' }));
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = name;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    // 저장이 시작되기 전에 URL 을 회수하면 빈 파일이 떨어진다 — 넉넉히 두고 푼다
+    setTimeout(() => URL.revokeObjectURL(url), 10000);
+  }
+
+  /**
+   * 문서 여러 개를 한 번에 저장 (spec + 체크리스트). 내용이 있는 것만 내려간다.
+   * 브라우저는 연속 저장을 "여러 파일 다운로드" 로 묶어 한 번 확인을 받으므로 사이를 조금 띄운다.
+   */
+  function downloadDocs(f, docs) {
+    docs.filter((d) => d.body && d.body.trim()).forEach((d, i) => {
+      const go = () => downloadText(docFileName(f, d.kind, d.version), d.body);
+      if (i === 0) go(); else setTimeout(go, 350 * i);
+    });
   }
 
   // 리뷰 모드 상태 (디자이너가 spec_in_review spec에 코멘트 달 때)
@@ -407,6 +609,11 @@
       : `${f.title} · spec ${f.specVersion || ''}`;
     const bodyEl = $('#doc-modal-body');
     bodyEl.innerHTML = (body && body.trim()) ? mdToHtml(body) : '<div class="feat-sub">본문 없음.</div>';
+
+    // 다운로드 — 버튼이 모달에 고정돼 있어(매번 새로 그리지 않는다) 핸들러는 덮어쓴다
+    const dl = $('#doc-download');
+    dl.disabled = !(body && body.trim());
+    dl.onclick = () => downloadText(docFileName(f, kind), body || '');
 
     // 재검토: 직전 버전 대비 변경분 바로가기 (디자이너 리뷰 모드 · 버전 2개 이상)
     const vlog = f.versionLog || [];
@@ -439,7 +646,7 @@
 
   // 각 제목 옆에 💬 코멘트 버튼 + 섹션 스레드를 붙인다 (Notion식)
   function addReviewAnchors(container) {
-    container.querySelectorAll('h3').forEach((h) => {
+    container.querySelectorAll(MD_HEADS).forEach((h) => {
       const section = h.textContent.trim();
       const btn = document.createElement('button');
       btn.className = 'cmt-add'; btn.type = 'button'; btn.textContent = '💬';
@@ -564,6 +771,8 @@
         <div class="doc-row">
           <button class="btn-primary" data-doc="spec">📄 spec 보기</button>
           <button class="btn-ghost" data-doc="checklist"${f.checklistBody ? '' : ' disabled'}>📋 체크리스트 보기</button>
+          <button class="btn-ghost" data-dl="docs"${f.specBody ? '' : ' disabled'}
+            title="spec·체크리스트를 .md 파일로 저장">⬇ 문서 받기</button>
         </div>
         <div class="feat-sub" style="margin-top:6px">
           상태 ${esc(f.specStatus || '-')} · 작성자 ${esc(userName(f.createdBy))}
@@ -582,6 +791,22 @@
     // 문서 보기 — spec 은 (역할·상태에 따라) 리뷰 모드, 체크리스트는 항상 읽기 전용
     panel.querySelectorAll('button[data-doc]').forEach((b) =>
       b.addEventListener('click', () => openDoc(f, b.dataset.doc)));
+    // 문서 다운로드 — 최신 spec + 체크리스트를 한 번에 (있는 것만)
+    panel.querySelectorAll('button[data-dl]').forEach((b) =>
+      b.addEventListener('click', () => downloadDocs(f, [
+        { kind: 'spec', body: f.specBody },
+        { kind: 'checklist', body: f.checklistBody },
+      ])));
+    // 과거 버전 다운로드 — 그 시점의 스냅샷 (versionLog 가 본문을 함께 보관한다)
+    panel.querySelectorAll('button[data-dl-ver]').forEach((b) =>
+      b.addEventListener('click', () => {
+        const snap = (f.versionLog || []).find((e) => e.version === b.dataset.dlVer);
+        if (!snap) return;
+        downloadDocs(f, [
+          { kind: 'spec', body: snap.body, version: snap.version },
+          { kind: 'checklist', body: snap.checklistBody, version: snap.version },
+        ]);
+      }));
     // 변경이력 사유 편집(개발자)
     panel.querySelectorAll('button[data-edit-ver]').forEach((b) =>
       b.addEventListener('click', () => editVersionReason(f, b.dataset.editVer, b.dataset.reason)));
@@ -755,9 +980,13 @@
       const diffBtn = (!legacy && prev)
         ? `<button class="ver-diff" data-diff-from="${esc(prev.version)}" data-diff-to="${esc(e.version)}">변경분</button>`
         : '';
+      // 스냅샷이 있는 버전만 — 자동 버저닝 이전 항목은 본문을 갖고 있지 않다
+      const dlBtn = (!legacy && (e.body || e.checklistBody))
+        ? `<button class="ver-diff" data-dl-ver="${esc(e.version)}" title="이 버전의 문서 받기">⬇</button>`
+        : '';
       return `<div class="ver-item">
         <span class="ver-num mono">${esc(e.version)}</span> ${tag}
-        <span class="feat-sub">${esc(e.at || '')}</span>${editBtn}${diffBtn}
+        <span class="feat-sub">${esc(e.at || '')}</span>${editBtn}${diffBtn}${dlBtn}
         <div class="ver-reason">${esc(e.reason || '')}</div>
       </div>`;
     }).join('');
@@ -1181,6 +1410,7 @@
           최종 ${esc(p.lastAmendedDate || '-')} ${esc(p.lastAmendedAuthor || '')} ·
           항목 ${(p.itemIds || []).length}개
         </div>
+        <button class="btn-ghost" id="prd-dl" title="PRD 본문을 .md 파일로 저장">⬇ 다운로드</button>
         ${auth.isDeveloper() ? '<button class="btn-ghost" id="prd-edit">PRD 개정 업로드</button>' : ''}
       </div>
       <div class="prd-grid">
@@ -1189,6 +1419,7 @@
       </div>`;
     $('#prd-doc').innerHTML = mdToHtml(p.body || '');
     addPrdAnchors($('#prd-doc'));
+    $('#prd-dl').addEventListener('click', () => downloadText(prdFileName(p.version), p.body || ''));
     const edit = $('#prd-edit');
     if (edit) edit.addEventListener('click', () => { closeModal('prd-modal'); openPrdUpload(); });
     renderPrdThread();
@@ -1196,17 +1427,17 @@
 
   // 제목 옆 💬 — 클릭하면 그 섹션으로 논의를 좁힌다(새 댓글의 anchor 도 그 섹션이 된다)
   function addPrdAnchors(container) {
-    container.querySelectorAll('h3').forEach((h) => {
+    container.querySelectorAll(MD_HEADS).forEach((h) => {
       const section = h.textContent.trim();
-      const n = PRD.comments.list().filter((c) => !c.deleted && c.anchor === section).length;
+      const n = PRD.comments.list().filter((c) => !c.deleted && sameSection(c.anchor, section)).length;
       const btn = document.createElement('button');
-      btn.className = 'cmt-add' + (prdAnchor === section ? ' on' : '') + (n ? ' has' : '');
+      btn.className = 'cmt-add' + (sameSection(prdAnchor, section) ? ' on' : '') + (n ? ' has' : '');
       btn.type = 'button';
       btn.textContent = n ? `💬 ${n}` : '💬';
       btn.title = '이 섹션의 논의';
       h.appendChild(btn);
       btn.addEventListener('click', () => {
-        prdAnchor = (prdAnchor === section) ? null : section;
+        prdAnchor = sameSection(prdAnchor, section) ? null : section;
         renderPrd();
       });
     });
@@ -1216,7 +1447,7 @@
     const el = $('#prd-thread'); if (!el) return;
     mpClose();   // 아래 innerHTML 이 textarea 를 갈아끼우므로 열려 있던 멘션 팝오버는 버린다
     const all = PRD.comments.list();
-    const visible = all.filter((c) => !prdAnchor || c.anchor === prdAnchor);
+    const visible = all.filter((c) => !prdAnchor || sameSection(c.anchor, prdAnchor));
     const roots = visible.filter((c) => !c.replyTo);
     const me = auth.currentUser();
 
@@ -1457,10 +1688,16 @@
       }
     });
   }
+  // 저장은 UTC(ISO), 표시는 KST(UTC+9 고정, 서머타임 없음).
+  // 뷰어 로컬 시간이 아니라 팀 기준 시각으로 고정한다.
   function shortTime(iso) {
     if (!iso) return '';
     const s = String(iso);
-    return s.length >= 16 ? s.slice(0, 10) + ' ' + s.slice(11, 16) : s;
+    if (s.length < 16) return s;          // 날짜만 있는 값(YYYY-MM-DD)은 그대로
+    const d = new Date(s);
+    if (isNaN(d.getTime())) return s;
+    const kst = new Date(d.getTime() + 9 * 3600 * 1000).toISOString();
+    return kst.slice(0, 10) + ' ' + kst.slice(11, 16);
   }
 
   // ── 버전 이력 탭 ──
@@ -1472,9 +1709,10 @@
         ? `<button class="ver-edit" data-prd-ver="${esc(e.version)}" data-reason="${esc(e.reason || '')}" title="메모 편집">✏️</button>` : '';
       const diffBtn = i > 0
         ? `<button class="ver-diff" data-prd-from="${esc(idx[i - 1].version)}" data-prd-to="${esc(e.version)}">변경분</button>` : '';
+      const dlBtn = `<button class="ver-diff" data-prd-dl="${esc(e.version)}" title="이 버전 본문 받기">⬇</button>`;
       return `<div class="ver-item">
         <span class="ver-num mono">${esc(e.version)}</span> ${tag}
-        <span class="feat-sub">${esc(e.at || '')} ${esc(userName(e.uploadedBy) || '')}</span>${editBtn}${diffBtn}
+        <span class="feat-sub">${esc(e.at || '')} ${esc(userName(e.uploadedBy) || '')}</span>${editBtn}${diffBtn}${dlBtn}
         <div class="ver-reason">${esc(e.reason || '')}</div>
       </div>`;
     }).join('');
@@ -1495,6 +1733,16 @@
       openPrdDiff($('#prd-diff-from').value, $('#prd-diff-to').value));
     body.querySelectorAll('[data-prd-from]').forEach((b) =>
       b.addEventListener('click', () => openPrdDiff(b.dataset.prdFrom, b.dataset.prdTo)));
+    // 과거 버전 다운로드 — 본문은 versions/ 서브컬렉션에 있어 이때 한 건만 읽어온다
+    body.querySelectorAll('[data-prd-dl]').forEach((b) =>
+      b.addEventListener('click', async () => {
+        const v = b.dataset.prdDl;
+        b.disabled = true;
+        const text = await PRD.versionBody(v);
+        b.disabled = false;
+        if (text == null) { alert(`${v} 본문 스냅샷을 찾지 못했습니다.`); return; }
+        downloadText(prdFileName(v), text);
+      }));
     body.querySelectorAll('[data-prd-ver]').forEach((b) =>
       b.addEventListener('click', async () => {
         const next = prompt(`버전 메모 (${b.dataset.prdVer})`, b.dataset.reason || '');
