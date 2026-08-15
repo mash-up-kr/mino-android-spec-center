@@ -166,7 +166,7 @@ PRD 헤더는 `**키**: 값` 줄이 아니라 **마크다운 표**다.
 | 수정/삭제 | 작성자 본인만. 삭제는 소프트(`deleted:true`)로 순서 보존 |
 | 앵커 | `anchor = {section}` — 제목 옆 💬([app.js](../../js/app.js) `addReviewAnchors` 재사용). 앵커 없는 전체 댓글도 허용 |
 | 답글 | `replyTo` 1단. v1 은 평면 렌더 + 들여쓰기 |
-| @멘션 | 본문에서 `@handle` 추출 → `mentions[]`. v1 은 텍스트 하이라이트, 실제 Discord 개인 멘션은 `users.discordId` 매핑 후 (notifications.md Tier 2) |
+| @멘션 | `@` 입력 시 `users` 컬렉션 기반 자동완성 드롭다운(↑↓·Enter/Tab·Esc). 삽입 토큰은 **`@githubLogin`** — `mentionsOf` 정규식이 ASCII 전용이라 한글 이름을 넣으면 `mentions[]` 가 비어 알림이 누락된다. 표시는 반대로 핸들→이름 해석, 미등록 핸들은 회색. 실제 Discord 개인 멘션은 도입하지 않는다(채널 알림으로 충분) |
 
 > **의도**: 이 스레드 컴포넌트를 `features/{id}/discussion` 에도 그대로 꽂을 수 있게 분리해 만든다. P8.4 를 끝내면 **P5.1(spec 논의)이 사실상 반쯤 완성**된다 — 남는 건 상태 게이트와 `reviews[]` 서브컬렉션 전환뿐이다.
 
@@ -291,6 +291,7 @@ match /prds/{prdId} {
 - [x] `(FE)` `comments` 서브컬렉션 store(`list`/`post`/`edit`/`remove`) — mock·firebase
 - [x] `(FE)` 스레드 UI — 섹션 앵커 · 1단 답글 · 본인 수정/소프트 삭제 · `@handle` 하이라이트
 - [x] `(FE)` 앵커 클릭 ↔ 스레드 필터 연동 (카운트는 댓글 캐시에서 파생)
+- [x] `(FE)` `@` 자동완성 드롭다운 — 작성·수정 textarea 공용, 서버 변경 없음(`users` 는 이미 구독 중)
 - [x] `(rules)` `comments` 규칙(전원·본인 명의·작성자 위조 차단)
 - [x] **컴포넌트 분리** — `features/{id}/discussion` 에 재사용 가능한 형태로 (P5.1 발판)
 

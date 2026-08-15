@@ -614,6 +614,27 @@ table.feature-table { width: 100%; border-collapse: collapse; }
 .pc-anchor.on { background: var(--accent-soft); color: var(--accent); max-width: none; }
 .pc-anchor-x { border: 0; background: none; color: inherit; font-size: 13px; padding: 0 0 0 4px; }
 .mention { color: var(--accent); font-weight: 600; }
+/* 팀원으로 해석되지 않는 핸들 — 오타·외부인이라 핑이 안 간다는 신호 */
+.mention.unknown { color: var(--muted-2); font-weight: 500; }
+
+/* @멘션 자동완성 — body 에 fixed 로 띄운다(모달·스레드 목록의 overflow 클리핑 회피) */
+.mention-pop {
+  position: fixed; z-index: 60; min-width: 200px; max-height: 220px; overflow-y: auto;
+  background: var(--panel); border: 1px solid var(--border); border-radius: 10px;
+  box-shadow: 0 8px 24px rgba(17, 24, 39, .12); padding: 4px;
+}
+.mention-pop.hidden { display: none; }
+.mp-item {
+  display: flex; align-items: center; gap: 6px; padding: 6px 8px;
+  border-radius: 7px; cursor: pointer; font-size: 13px;
+}
+.mp-item.on { background: var(--accent-soft); }
+.mp-item:hover { background: var(--bg); }
+.mp-name { font-weight: 600; white-space: nowrap; }
+.mp-handle {
+  color: var(--muted); font-size: 12px; flex: 1; min-width: 0;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
 
 .prd-compose { border-top: 1px solid var(--border); padding-top: 8px; margin-top: 8px; }
 .prd-compose textarea {

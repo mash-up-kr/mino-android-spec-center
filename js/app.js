@@ -1214,6 +1214,7 @@
 
   function renderPrdThread() {
     const el = $('#prd-thread'); if (!el) return;
+    mpClose();   // 아래 innerHTML 이 textarea 를 갈아끼우므로 열려 있던 멘션 팝오버는 버린다
     const all = PRD.comments.list();
     const visible = all.filter((c) => !prdAnchor || c.anchor === prdAnchor);
     const roots = visible.filter((c) => !c.replyTo);
@@ -1264,7 +1265,7 @@
         ${replyTarget ? `<div class="pc-replying">↳ <b>${esc(userName(replyTarget.authorUid))}</b> 에게 답글
           <button class="pc-anchor-x" id="prd-reply-clear">×</button></div>` : ''}
         ${prdAnchor ? `<div class="feat-sub">§ ${esc(prdAnchor)} 에 남깁니다</div>` : ''}
-        <textarea id="prd-cmt-input" placeholder="PRD 에 대한 의견을 남기세요. @핸들 로 멘션할 수 있습니다."></textarea>
+        <textarea id="prd-cmt-input" placeholder="PRD 에 대한 의견을 남기세요. @ 를 입력하면 팀원 목록이 뜹니다."></textarea>
         <div class="prd-compose-foot">
           <span class="editor-msg" id="prd-cmt-msg"></span>
           <div class="spacer"></div>
@@ -1302,6 +1303,9 @@
       if (e.key !== 'Enter' || !(e.metaKey || e.ctrlKey) || e.isComposing || e.keyCode === 229) return;
       e.preventDefault(); postPrdComment();
     });
+    // 작성·수정 두 입력 모두 @자동완성 대상 (attachMention 이 중복 바인딩을 막는다)
+    attachMention($('#prd-cmt-input'));
+    el.querySelectorAll('.pc-edit-input').forEach((ta) => attachMention(ta));
   }
 
   async function postPrdComment() {
@@ -1318,9 +1322,141 @@
   // mock 은 구독이 없으므로 직접 다시 그린다 (firebase 는 onSnapshot 이 renderAll 을 부른다)
   function afterPrdWrite() { renderPrd(); renderPrdChip(); if (!FB) renderAll(); }
 
-  const mentionHtml = (body) => esc(body)
-    .replace(/@([A-Za-z0-9_-]{2,39})/g, '<span class="mention">@$1</span>')
-    .replace(/\n/g, '<br />');
+  // 저장은 `@githubLogin`, 표시는 실제 이름 — 팀원이 아닌 핸들(오타·외부인)은 회색으로 구분한다.
+  // esc() 를 먼저 통과시킨 문자열 위에서 치환한다(핸들 문자셋이 ASCII 라 재이스케이프 불필요).
+  function mentionHtml(body) {
+    const byHandle = new Map(auth.users().filter((u) => u.githubLogin)
+      .map((u) => [String(u.githubLogin).toLowerCase(), u]));
+    return esc(body)
+      .replace(/@([A-Za-z0-9_-]{2,39})/g, (full, h) => {
+        const u = byHandle.get(h.toLowerCase());
+        return u
+          ? `<span class="mention" title="@${u.githubLogin}">@${esc(u.name || u.githubLogin)}</span>`
+          : `<span class="mention unknown">${full}</span>`;
+      })
+      .replace(/\n/g, '<br />');
+  }
+
+  // ---------- @멘션 자동완성 (댓글 작성·수정 textarea 공용) ----------
+  // 삽입 토큰은 **githubLogin** 이다 — store 의 mentionsOf 정규식이 ASCII 전용이라
+  // `@민호` 처럼 한글을 넣으면 mentions[] 가 비고 notifyOnPrdComment 가 조용히 건너뛴다.
+  // 사람이 읽는 이름은 위 mentionHtml 이 렌더 시점에 되돌린다.
+  // 팝오버는 body 에 fixed 로 띄운다 — .prd-thread-list·.modal 의 overflow 에 잘리지 않게.
+  const MENTION_MAX = 6;
+  // 검색어에는 한글도 받는다 — 팀원을 `@은석` 으로 찾는 게 자연스럽다. 삽입되는 토큰은
+  // 그래도 ASCII 핸들이다. ㄱ-ㅣ 은 IME 조합 중간의 낱자(ㅇ, ㅡ …)까지 커버.
+  const MENTION_RE = /(^|[\s([{>])@([A-Za-z0-9_\-가-힣ㄱ-ㅣ]*)$/;
+  const mp = { el: null, ta: null, items: [], sel: 0, at: -1 };
+
+  function mentionUsers(q) {
+    const key = q.toLowerCase();
+    const rank = (u) => {
+      const h = String(u.githubLogin).toLowerCase(), n = String(u.name || '').toLowerCase();
+      if (!key) return 2;                                        // `@` 만 친 상태 = 전원
+      if (h.startsWith(key) || n.startsWith(key)) return 2;      // 접두 일치가 위
+      return (h.includes(key) || n.includes(key)) ? 1 : 0;
+    };
+    return auth.users().filter((u) => u.githubLogin)
+      .map((u) => ({ u, r: rank(u) })).filter((x) => x.r > 0)
+      .sort((a, b) => b.r - a.r).slice(0, MENTION_MAX).map((x) => x.u);
+  }
+
+  function mpEl() {
+    if (mp.el) return mp.el;
+    const el = document.createElement('div');
+    el.className = 'mention-pop hidden';
+    // click 은 blur 뒤에 와서 늦다 — mousedown 으로 잡고 포커스 이동을 막는다.
+    el.addEventListener('mousedown', (e) => {
+      const it = e.target.closest('.mp-item');
+      if (!it) return;
+      e.preventDefault();
+      mpPick(Number(it.dataset.i));
+    });
+    document.body.appendChild(el);
+    window.addEventListener('scroll', () => { if (mp.ta) mpPlace(); }, true);
+    window.addEventListener('resize', () => { if (mp.ta) mpPlace(); });
+    mp.el = el;
+    return el;
+  }
+
+  function mpClose() {
+    mp.ta = null; mp.items = []; mp.at = -1;
+    if (mp.el) mp.el.classList.add('hidden');
+  }
+
+  function mpDraw() {
+    mp.el.innerHTML = mp.items.map((u, i) => `
+      <div class="mp-item${i === mp.sel ? ' on' : ''}" data-i="${i}">
+        <span class="mp-name">${esc(u.name || u.githubLogin)}</span>
+        <span class="mp-handle">@${esc(u.githubLogin)}</span>
+        <span class="lu-role ${esc(u.role || '')}">${u.role === 'designer' ? '디자이너' : '개발자'}</span>
+      </div>`).join('');
+    mp.el.classList.remove('hidden');
+    mpPlace();
+  }
+
+  // textarea 위쪽에 붙이되, 위 공간이 모자라면 아래로 뒤집는다.
+  function mpPlace() {
+    if (!mp.ta || !mp.el) return;
+    const r = mp.ta.getBoundingClientRect();
+    mp.el.style.left = r.left + 'px';
+    mp.el.style.width = r.width + 'px';
+    if (r.top > mp.el.offsetHeight + 8) {
+      mp.el.style.top = '';
+      mp.el.style.bottom = (window.innerHeight - r.top + 4) + 'px';
+    } else {
+      mp.el.style.bottom = '';
+      mp.el.style.top = (r.bottom + 4) + 'px';
+    }
+  }
+
+  function mpPick(i) {
+    const u = mp.items[i], ta = mp.ta;
+    if (!u || !ta) return;
+    const token = '@' + u.githubLogin + ' ';
+    ta.value = ta.value.slice(0, mp.at) + token + ta.value.slice(ta.selectionStart);
+    const caret = mp.at + token.length;
+    mpClose();
+    ta.focus();
+    ta.setSelectionRange(caret, caret);
+  }
+
+  function attachMention(ta) {
+    if (!ta || ta.dataset.mention) return;
+    ta.dataset.mention = '1';
+    mpEl();
+
+    const refresh = () => {
+      if (ta.selectionStart !== ta.selectionEnd) return mpClose();
+      const m = MENTION_RE.exec(ta.value.slice(0, ta.selectionStart));
+      if (!m) return mpClose();
+      const items = mentionUsers(m[2]);
+      if (!items.length) return mpClose();
+      mp.ta = ta; mp.items = items; mp.sel = 0;
+      mp.at = ta.selectionStart - m[2].length - 1;   // `@` 의 인덱스
+      mpDraw();
+    };
+    ta.addEventListener('input', refresh);
+    ta.addEventListener('click', refresh);
+    // ↑↓ 는 열려 있을 때 목록 이동에 쓰므로 여기서 다시 열지 않는다(선택이 0으로 리셋됨).
+    ta.addEventListener('keyup', (e) => { if (/^(ArrowLeft|ArrowRight|Home|End)$/.test(e.key)) refresh(); });
+    ta.addEventListener('blur', () => setTimeout(() => { if (mp.ta === ta) mpClose(); }, 0));
+    ta.addEventListener('keydown', (e) => {
+      if (mp.ta !== ta || !mp.items.length) return;
+      // 한글 조합 중 Enter 는 글자 확정용 — 가로채면 입력이 깨진다 (전송 핸들러와 같은 가드)
+      if (e.isComposing || e.keyCode === 229) return;
+      if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
+        e.preventDefault();
+        mp.sel = (mp.sel + (e.key === 'ArrowDown' ? 1 : mp.items.length - 1)) % mp.items.length;
+        mpDraw();
+      } else if (e.key === 'Enter' || e.key === 'Tab') {
+        if (e.metaKey || e.ctrlKey) return;                    // Cmd+Enter 는 전송으로 넘긴다
+        e.preventDefault(); e.stopPropagation(); mpPick(mp.sel);
+      } else if (e.key === 'Escape') {
+        e.preventDefault(); e.stopPropagation(); mpClose();     // 모달까지 닫히지 않게
+      }
+    });
+  }
   function shortTime(iso) {
     if (!iso) return '';
     const s = String(iso);
