@@ -574,3 +574,80 @@ table.feature-table { width: 100%; border-collapse: collapse; }
 @media (max-width: 1180px) {
   .workspace { grid-template-columns: 1fr; }
 }
+
+/* ===================== PRD (P8) ===================== */
+.prd-chip.warn { border-color: var(--amber); color: var(--amber); background: var(--amber-bg); }
+.prd-chip .mono { color: inherit; }
+
+.prd-empty { padding: 8px 0; }
+.prd-head {
+  display: flex; align-items: center; gap: 10px;
+  padding-bottom: 10px; margin-bottom: 10px; border-bottom: 1px solid var(--border);
+}
+.prd-head .feat-sub { flex: 1; }
+
+/* 좌 본문 / 우 논의 2단 — 노션식 문서+스레드 */
+.prd-grid { display: grid; grid-template-columns: 1fr 340px; gap: 14px; align-items: start; }
+.prd-doc {
+  max-height: 62vh; overflow-y: auto; padding-right: 8px;
+  border-right: 1px solid var(--border);
+}
+.prd-thread { display: flex; flex-direction: column; max-height: 62vh; }
+.prd-thread-h { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; padding-bottom: 8px; }
+.prd-thread-list { flex: 1; overflow-y: auto; display: flex; flex-direction: column; gap: 8px; }
+
+.pc { border: 1px solid var(--border); border-radius: 10px; padding: 8px 10px; background: var(--panel); }
+.pc.reply { margin-left: 18px; border-left: 3px solid var(--accent-soft); }
+.pc.deleted { background: var(--bg); border-style: dashed; }
+.pc-h { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; margin-bottom: 4px; }
+.pc-who { font-weight: 600; font-size: 13px; }
+.pc-body { font-size: 13px; overflow-wrap: anywhere; }
+.pc-actions { display: flex; gap: 8px; margin-top: 6px; }
+.pc-edit-input { width: 100%; min-height: 64px; font: inherit; padding: 6px 8px;
+  border: 1px solid var(--border); border-radius: 8px; resize: vertical; }
+.pc-replying { font-size: 12px; color: var(--muted); margin-bottom: 4px; }
+.pc-anchor {
+  font-size: 11px; color: var(--muted); background: var(--gray-bg);
+  padding: 1px 8px; border-radius: 999px; max-width: 180px;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.pc-anchor.on { background: var(--accent-soft); color: var(--accent); max-width: none; }
+.pc-anchor-x { border: 0; background: none; color: inherit; font-size: 13px; padding: 0 0 0 4px; }
+.mention { color: var(--accent); font-weight: 600; }
+
+.prd-compose { border-top: 1px solid var(--border); padding-top: 8px; margin-top: 8px; }
+.prd-compose textarea {
+  width: 100%; min-height: 66px; font: inherit; padding: 8px;
+  border: 1px solid var(--border); border-radius: 8px; resize: vertical;
+}
+.prd-compose textarea:focus { outline: none; border-color: var(--accent); }
+.prd-compose-foot { display: flex; align-items: center; gap: 8px; margin-top: 6px; }
+
+.cmt-add.on { background: var(--accent); color: #fff; }
+.btn-link { border: 0; background: none; color: var(--accent); font-size: 12px; padding: 0; }
+.btn-link.danger { color: var(--red); }
+
+.prd-line { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin-top: 8px; }
+.prd-vercompare { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin-bottom: 12px; }
+
+/* diff 변경 섹션 요약 */
+.diff-sections { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; margin-bottom: 10px; }
+.sec-chip { font-size: 11px; padding: 2px 9px; border-radius: 999px; background: var(--gray-bg); color: var(--gray); }
+.sec-chip.add { background: var(--green-bg); color: var(--green); }
+.sec-chip.chg { background: var(--amber-bg); color: var(--amber); }
+.sec-chip.del { background: var(--red-bg); color: var(--red); }
+
+@media (max-width: 1100px) {
+  .prd-grid { grid-template-columns: 1fr; }
+  .prd-doc { border-right: 0; max-height: 40vh; }
+}
+
+/* PRD 섹션 앵커 — 리뷰 모드(.review-mode)가 아니라 상시 노출이므로 기본 opacity:0 을 되돌린다.
+   댓글이 달린 섹션은 항상 진하게 보여 "여기 논의가 있다"를 드러낸다. */
+.prd-doc h3 { position: relative; }
+.prd-doc .cmt-add { opacity: .38; }
+.prd-doc h3:hover .cmt-add,
+.prd-doc .cmt-add.has,
+.prd-doc .cmt-add.on { opacity: 1; }
+.prd-doc .cmt-add.has { color: var(--accent); font-weight: 600; }
+.prd-doc .cmt-add.on { background: var(--accent); color: #fff; border-radius: 999px; padding: 1px 7px; }

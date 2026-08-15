@@ -39,6 +39,26 @@ users/{uid}
      # GitHub 토큰은 Firestore 에 저장하지 않는다 — Secret Manager `user-gh-token-{uid}` (token-store.js)
 ```
 
+### PRD (P8 · 구현 완료·배포 대기)
+
+spec 의 **상위 문서**. `docs/prd/business-context.md` 는 프로젝트당 1개라 **싱글턴**이다.
+상세 설계는 [prd-track.md](prd-track.md).
+
+```
+prds/{prdId}                      # MVP: 'business-context' 하나
+  ├─ title / version / body       # 헤더 표(`| **버전** | 1.2.0 |`)·H1·원문. 버전 소유권은 /mino-prd
+  ├─ createdDate / lastAmendedDate / prdAuthor / lastAmendedAuthor
+  ├─ itemIds: string[]            # §2 목표의 [SYS-*]·[SCR-*]
+  ├─ versionIndex: [{version, level, at, reason, uploadedBy}]  # 스냅샷 메타만(본문 없음)
+  ├─ uploadedBy / createdAt / updatedAt
+  ├─ versions/{version}           # 버전별 **본문** 스냅샷 (서브컬렉션·불변)
+  └─ comments/{msgId}             # 전원 참여 논의 (섹션 앵커·소프트 삭제)
+```
+
+> **스냅샷을 서브컬렉션으로 두는 점이 spec 과 다르다.** spec 은 `versionLog[]` 배열이지만 PRD 는 본문이 크고 개정이 잦아 배열로 쌓으면 문서 1MB 한도가 현실적 위험이 된다 ([prd-track.md](prd-track.md) §2).
+>
+> spec 의 `prdVersion` 이 두 문서를 잇는 **조인 키**다 — 별도 참조 필드를 신설하지 않으므로 기존 feature 문서 마이그레이션이 필요 없다.
+
 ### v2 → v3 필드 변경
 
 | 필드 | 처리 | 이유 |
@@ -82,6 +102,9 @@ users/{uid}
 | `features/{id}` | 로그인 사용자 | create=developer(본인·`spec_draft`·PR필드 null·`baseBranch` 지정·`checklistBody` 비어있지 않음) · update=역할별 전이 허용목록 |
 | `users/{uid}` | 로그인 사용자(리뷰어 이름 표시) | 본인만 |
 | Storage `features/**` | 로그인 사용자 | **금지** (레거시 읽기 전용) |
+| `prds/{id}` *(P8)* | 로그인 사용자 | create/update=**개발자만** · delete 금지 |
+| `prds/{id}/versions/{v}` | 로그인 사용자 | create=개발자 · update/delete 금지(불변) |
+| `prds/{id}/comments/{msgId}` | 로그인 사용자 | create=**전원**(본인 명의) · update=본인 · delete 금지(소프트) |
 
 - **전이 허용목록**: 개발자/디자이너 각각 허용된 `(from→to)` 조합만 통과(`devTransitionOk`/`desTransitionOk`). `spec_in_review` 는 read-only(상태유지 수정 차단).
 - **필드 잠금**: `prNumber`/`prUrl` 등 PR 필드는 클라이언트가 임의값 못 넣음(그대로거나 null만). `pr_open`/`merged`/`pr_closed` 로의 전이는 **Functions(Admin SDK, 규칙 우회)** 전용 → 클라이언트 위조 불가. 디자이너는 `specBody` 뿐 아니라 `checklistBody`·`checklistStatus`·`checklistTargetVersion` 도 건드릴 수 없다(`desContentLocked`) — 체크리스트는 검수 대상이 아니라 개발자 자가검증 산출물이기 때문.

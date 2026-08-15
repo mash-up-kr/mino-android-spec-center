@@ -4,7 +4,7 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>MASC · Mino Android Spec Center</title>
-  <link rel="stylesheet" href="styles.css?v=15" />
+  <link rel="stylesheet" href="styles.css?v=16" />
 </head>
 <body>
   <!-- 부팅 에러를 빈 화면 대신 표면화 -->
@@ -42,6 +42,7 @@
           <span id="meta-line">Team-MINO-Android</span>
         </div>
         <div class="spacer"></div>
+        <button class="btn-ghost prd-chip" id="btn-prd">📘 PRD</button>
         <button class="btn-ghost" id="btn-roleguide">역할별 사용법</button>
         <button class="btn-ghost" id="btn-skill">스킬 안내</button>
         <button class="btn-ghost" id="btn-legend">상태 안내</button>
@@ -183,6 +184,35 @@
       </div>
     </div>
 
+    <!-- PRD 모달 (P8) — 문서 / 버전 이력 / 연결된 스펙 + 전원 논의 스레드 -->
+    <div id="prd-modal" class="modal-overlay hidden">
+      <div class="modal-card modal-xwide">
+        <div class="modal-head">
+          <h2 id="prd-modal-title">PRD</h2>
+          <div class="doc-tabs" id="prd-tabs"></div>
+          <button class="modal-close" data-close="prd-modal" aria-label="닫기">×</button>
+        </div>
+        <div class="modal-body" id="prd-modal-body"></div>
+      </div>
+    </div>
+
+    <!-- PRD 업로드 모달 (개발자 한정) -->
+    <div id="prd-upload-modal" class="modal-overlay hidden">
+      <div class="modal-card modal-xwide">
+        <div class="modal-head">
+          <h2 id="prd-upload-title">PRD 업로드</h2>
+          <button class="modal-close" data-close="prd-upload-modal" aria-label="닫기">×</button>
+        </div>
+        <div class="modal-body" id="prd-upload-body"></div>
+        <div class="modal-foot">
+          <span class="editor-msg" id="prd-upload-msg"></span>
+          <div class="spacer"></div>
+          <button class="btn-ghost" data-close="prd-upload-modal">취소</button>
+          <button class="btn-primary" id="prd-upload-save">저장</button>
+        </div>
+      </div>
+    </div>
+
     <!-- 버전 diff 모달 (재검토 변경분 · 버전 비교) -->
     <div id="diff-modal" class="modal-overlay hidden">
       <div class="modal-card modal-xwide">
@@ -225,12 +255,13 @@
   <script src="https://www.gstatic.com/firebasejs/10.12.5/firebase-functions-compat.js"></script>
 
   <script src="js/firebase-config.js?v=7"></script>
-  <script src="data/seed.js?v=6"></script>
+  <script src="data/seed.js?v=7"></script>
   <script src="js/spec-parse.js?v=6"></script>
-  <script src="js/validate.js?v=6"></script>
-  <script src="js/version.js?v=5"></script>
-  <script src="js/store-firebase.js?v=19"></script>
-  <script src="js/store.js?v=16"></script>
-  <script src="js/app.js?v=23"></script>
+  <script src="js/prd-parse.js?v=1"></script>
+  <script src="js/validate.js?v=7"></script>
+  <script src="js/version.js?v=6"></script>
+  <script src="js/store-firebase.js?v=20"></script>
+  <script src="js/store.js?v=17"></script>
+  <script src="js/app.js?v=24"></script>
 </body>
 </html>

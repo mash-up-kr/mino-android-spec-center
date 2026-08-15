@@ -49,10 +49,12 @@
 
   let cache = [];            // features 캐시
   let usersCache = [];       // users 캐시 (리뷰어 이름 표시용)
+  let prdCache = null;       // PRD 싱글턴 캐시 (본문 스냅샷 제외 — versions/ 는 지연 로드)
+  let prdCommentsCache = []; // PRD 댓글 캐시
   let current = null;        // { uid, name, githubLogin, role }
   let pendingLogin = null;   // 팝업 로그인 직후 { username, token }
   const authCbs = [], dataCbs = [];
-  let unsubFeatures = null, unsubUsers = null;
+  let unsubFeatures = null, unsubUsers = null, unsubPrd = null, unsubPrdComments = null;
 
   // 리다이렉트 로그인 결과 준비 신호 — onAuthStateChanged 가 pendingLogin 을
   // 소비하기 전에 getRedirectResult 가 끝나도록 보장한다.
@@ -93,9 +95,11 @@
   fbAuth.onAuthStateChanged(async (u) => {
     await redirectReady; // 리다이렉트 로그인 시 pendingLogin 준비 대기
     if (!u) {
-      current = null; cache = [];
+      current = null; cache = []; prdCache = null; prdCommentsCache = [];
       if (unsubFeatures) { unsubFeatures(); unsubFeatures = null; }
       if (unsubUsers) { unsubUsers(); unsubUsers = null; }
+      if (unsubPrd) { unsubPrd(); unsubPrd = null; }
+      if (unsubPrdComments) { unsubPrdComments(); unsubPrdComments = null; }
       notifyAuth(); return;
     }
     const ref = db.doc('users/' + u.uid);
@@ -139,6 +143,26 @@
       unsubUsers = db.collection('users').onSnapshot(
         (qs) => { usersCache = qs.docs.map((d) => Object.assign({ uid: d.id }, d.data())); notifyData(); },
         (err) => console.error('users.snapshot', err)
+      );
+    }
+    // PRD 는 싱글턴 문서 1건 + 댓글 서브컬렉션. 버전 본문 스냅샷은 구독하지 않는다(지연 로드).
+    if (!unsubPrd) {
+      unsubPrd = prdRef().onSnapshot(
+        (s) => { prdCache = s.exists ? normalizePrd(s.data()) : null; notifyData(); },
+        (err) => console.error('prd.snapshot', err)
+      );
+    }
+    if (!unsubPrdComments) {
+      unsubPrdComments = db.collection(`prds/${PRD_ID}/comments`).orderBy('createdAt').onSnapshot(
+        (qs) => {
+          prdCommentsCache = qs.docs.map((d) => {
+            const c = d.data();
+            const ts = c.createdAt && c.createdAt.toDate ? c.createdAt.toDate().toISOString() : '';
+            return Object.assign({}, c, { msgId: d.id, createdAt: ts });
+          });
+          notifyData();
+        },
+        (err) => console.error('prd.comments.snapshot', err)
       );
     }
   }
@@ -376,5 +400,160 @@
     },
   };
 
-  window.MASC = { auth, features, STATUS: ENUMS.status, BACKEND: 'firebase' };
+  // ===================== PRD (P8) =====================
+  // spec 의 상위 문서. 싱글턴 `prds/business-context` + versions/ · comments/ 서브컬렉션.
+  // 컨펌 게이트가 없어 status 필드도 없다. 설계: docs/design/prd-track.md
+  const PRD_ID = 'business-context';
+  const PRDP = window.MASCPrd;
+  const prdRef = () => db.doc('prds/' + PRD_ID);
+
+  // 본문 스냅샷은 versions/{version} 서브컬렉션에 두고, 부모 문서에는 **메타만**
+  // (`versionIndex`) 담는다 — 목록 렌더에 본문을 내려받지 않기 위한 분리다.
+  function normalizePrd(d) {
+    return {
+      prdId: PRD_ID,
+      title: d.title || '', version: d.version || '', body: d.body || '',
+      createdDate: d.createdDate || '', lastAmendedDate: d.lastAmendedDate || '',
+      prdAuthor: d.prdAuthor || '', lastAmendedAuthor: d.lastAmendedAuthor || '',
+      itemIds: d.itemIds || [], versionIndex: d.versionIndex || [],
+      uploadedBy: d.uploadedBy || '',
+    };
+  }
+
+  const prd = {
+    id: PRD_ID,
+    get() { return prdCache ? JSON.parse(JSON.stringify(prdCache)) : null; },
+    subscribe(cb) { dataCbs.push(cb); },
+    versionIndex() { return prdCache ? JSON.parse(JSON.stringify(prdCache.versionIndex || [])) : []; },
+
+    /** 버전 본문 지연 로드 — diff 를 열 때 필요한 두 건만 읽는다. */
+    async versionBody(version) {
+      try {
+        const s = await db.doc(`prds/${PRD_ID}/versions/${version}`).get();
+        return s.exists ? (s.data().body || '') : null;
+      } catch (e) { console.error('prd.versionBody', e); return null; }
+    },
+
+    /**
+     * 업로드/개정. 검증(validatePrd)은 app.js 가 선행한다.
+     * 부모 문서 갱신 + 스냅샷 생성을 **트랜잭션**으로 묶고, `expectedVersion` 으로
+     * 낙관적 잠금을 건다 — PRD 는 싱글턴이라 두 개발자가 동시에 올리면 실제로 덮어쓴다.
+     */
+    async save(input) {
+      if (!auth.isDeveloper()) return { ok: false, error: 'PRD 업로드는 개발자만 가능합니다.' };
+      const body = String((input && input.body) || '');
+      if (!body.trim()) return { ok: false, error: 'PRD 본문이 비어 있습니다.' };
+      const m = PRDP.parseMeta(body);
+      if (!m.version) return { ok: false, error: '헤더 표에서 버전을 찾지 못했습니다.' };
+      const expected = input && input.expectedVersion;
+      const uid = current ? current.uid : '';
+
+      try {
+        const result = await db.runTransaction(async (tx) => {
+          const snap = await tx.get(prdRef());
+          const cur = snap.exists ? snap.data() : null;
+          if (cur && expected !== undefined && expected !== null && (cur.version || '') !== expected) {
+            return { conflict: true, current: cur.version || '' };
+          }
+          const level = cur ? VER.levelBetween(cur.version || '', m.version) : 'init';
+          const index = (cur && cur.versionIndex ? cur.versionIndex.map((e) => Object.assign({}, e)) : []);
+          const last = index[index.length - 1];
+          if (last && last.version === m.version) last.at = today();
+          else index.push({ version: m.version, level, at: today(), reason: '', uploadedBy: uid });
+
+          const data = {
+            title: m.title || (cur && cur.title) || PRD_ID,
+            version: m.version,
+            body,
+            createdDate: m.createdDate || (cur && cur.createdDate) || '',
+            lastAmendedDate: m.lastAmendedDate || today(),
+            prdAuthor: m.prdAuthor || (cur && cur.prdAuthor) || '',
+            lastAmendedAuthor: m.lastAmendedAuthor || '',
+            itemIds: m.goalIds || [],
+            versionIndex: index,
+            uploadedBy: uid,
+            updatedAt: serverTs(),
+          };
+          if (!cur) data.createdAt = serverTs();
+          tx.set(prdRef(), data, { merge: true });
+          // 스냅샷은 버전 문자열을 문서 id 로 — 같은 버전 중복 생성이 구조적으로 불가능하다.
+          tx.set(db.doc(`prds/${PRD_ID}/versions/${m.version}`),
+            { version: m.version, body, at: today(), uploadedBy: uid });
+          return { created: !cur, level };
+        });
+        if (result.conflict) {
+          return {
+            ok: false, conflict: true,
+            error: `그 사이 PRD 가 ${result.current} 로 갱신됐습니다. 최신본을 받아 다시 개정해 주세요.`,
+          };
+        }
+        return { ok: true, created: result.created, level: result.level };
+      } catch (e) {
+        return { ok: false, error: e.message || 'PRD 저장 실패' };
+      }
+    },
+
+    async editVersionReason(version, reason) {
+      if (!auth.isDeveloper()) return { ok: false, error: '개발자만 편집 가능' };
+      if (!prdCache) return { ok: false, error: 'PRD 없음' };
+      const index = (prdCache.versionIndex || []).map((e) => Object.assign({}, e));
+      for (let k = index.length - 1; k >= 0; k--) {
+        if (index[k].version === version) { index[k].reason = reason; break; }
+      }
+      await prdRef().update({ versionIndex: index, updatedAt: serverTs() });
+      return { ok: true };
+    },
+
+    // ---------- 댓글 — 로그인한 누구나 (요구사항 ②) ----------
+    comments: {
+      list() { return prdCommentsCache.map((c) => JSON.parse(JSON.stringify(c))); },
+      async post(input) {
+        if (!current) return { ok: false, error: '로그인이 필요합니다.' };
+        const body = String((input && input.body) || '').trim();
+        if (!body) return { ok: false, error: '내용을 입력하세요.' };
+        try {
+          await db.collection(`prds/${PRD_ID}/comments`).add({
+            body,
+            authorUid: current.uid, authorRole: current.role || '',
+            anchor: (input && input.anchor) || null,
+            replyTo: (input && input.replyTo) || null,
+            mentions: mentionsOf(body),
+            deleted: false,
+            createdAt: serverTs(), updatedAt: null,
+          });
+          return { ok: true };
+        } catch (e) { return { ok: false, error: e.message || '댓글 등록 실패' }; }
+      },
+      async edit(msgId, body) {
+        const next = String(body || '').trim();
+        if (!next) return { ok: false, error: '내용을 입력하세요.' };
+        try {
+          await db.doc(`prds/${PRD_ID}/comments/${msgId}`)
+            .update({ body: next, mentions: mentionsOf(next), updatedAt: serverTs() });
+          return { ok: true };
+        } catch (e) { return { ok: false, error: '작성자만 수정할 수 있습니다.' }; }
+      },
+      async remove(msgId) {
+        try {
+          // 소프트 삭제 — 타임라인 순서를 보존한다(하드 delete 는 규칙에서 차단).
+          await db.doc(`prds/${PRD_ID}/comments/${msgId}`)
+            .update({ deleted: true, body: '', updatedAt: serverTs() });
+          return { ok: true };
+        } catch (e) { return { ok: false, error: '작성자만 삭제할 수 있습니다.' }; }
+      },
+    },
+  };
+
+  // 본문에서 `@handle` 추출 (알림 대상 · v1 은 표시용)
+  function mentionsOf(body) {
+    const out = [];
+    const re = /@([A-Za-z0-9_-]{2,39})/g;
+    let m;
+    while ((m = re.exec(String(body || ''))) !== null) {
+      if (out.indexOf(m[1]) < 0) out.push(m[1]);
+    }
+    return out;
+  }
+
+  window.MASC = { auth, features, prd, STATUS: ENUMS.status, BACKEND: 'firebase' };
 })();

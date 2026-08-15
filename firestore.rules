@@ -93,5 +93,42 @@ service cloud.firestore {
         allow update, delete: if false;
       }
     }
+
+    // ── PRD (P8) — spec 의 상위 문서. docs/design/prd-track.md §8 ──
+    // 컨펌 게이트가 없어 상태 전이 허용목록도 없다. 대신 권한이 둘로 갈린다:
+    //   문서 = 개발자만 (산출물 파일을 가진 주체) · 논의 = 로그인한 전원
+    match /prds/{prdId} {
+      allow read: if signedIn();
+      allow create, update: if isDeveloper()
+        && request.resource.data.uploadedBy == request.auth.uid
+        && request.resource.data.version is string
+        && request.resource.data.version != ''
+        && request.resource.data.body is string
+        && request.resource.data.body != '';
+      allow delete: if false;
+
+      // 버전 스냅샷 — 문서 id 가 버전 문자열이라 중복 생성이 구조적으로 불가.
+      // 갱신/삭제를 막아 감사 기록으로서 불변성을 지킨다.
+      match /versions/{version} {
+        allow read: if signedIn();
+        allow create: if isDeveloper();
+        allow update, delete: if false;
+      }
+
+      // 논의 — 로그인한 누구나(개발자·디자이너), 본인 명의로만.
+      // 삭제는 소프트(deleted:true)만 허용해 스레드 순서를 보존한다.
+      match /comments/{msgId} {
+        allow read: if signedIn();
+        allow create: if signedIn()
+          && request.resource.data.authorUid == request.auth.uid
+          && request.resource.data.body is string
+          && request.resource.data.body != '';
+        allow update: if signedIn()
+          && resource.data.authorUid == request.auth.uid
+          && request.resource.data.authorUid == resource.data.authorUid
+          && request.resource.data.createdAt == resource.data.createdAt;
+        allow delete: if false;
+      }
+    }
   }
 }

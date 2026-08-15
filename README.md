@@ -52,6 +52,7 @@ spec_draft → spec_in_review → spec_approved → pr_open → merged
 | 🧬 | **버전 스냅샷** | 버전 값은 `/mino-spec` 스킬이 소유(헤더 `**버전**`). 대시보드는 버전별 본문 스냅샷만 남기고 MAJOR/MINOR/PATCH는 semver 비교로 파생 표시 |
 | 🧾 | **재검토 diff** | "지난 검토 이후 변경분"을 버전 스냅샷 기준으로 표시 |
 | 🔔 | **Discord 알림** | 컨펌 요청·승인·반려·무효화·머지를 Firestore 트리거가 감지해 **역할 멘션**과 함께 Discord로 전송. 알림 클릭 시 해당 feature로 딥링크 ([상황별 미리보기](https://mash-up-kr.github.io/mino-android-spec-center/docs/v2/notifications/preview.html)) |
+| 📘 | **PRD 트랙 (상위 문서)** | `/mino-prd` 산출물(`docs/prd/business-context.md`)을 업로드해 팀 공용으로 두고, **전원이 섹션 앵커 댓글로 논의**. spec 헤더의 `**기준 PRD 버전**`으로 **버전 정합을 추적**(🔴비호환/🟡뒤처짐)하고, 개정 시 **뒤처진 spec 목록과 함께 Discord 알림**. 버전 간 **diff**(변경 섹션 요약) 제공 ([설계](docs/design/prd-track.md)) |
 | 🔒 | **역할 기반 보안규칙** | Firestore 규칙이 역할별 전이 허용목록·필드 잠금·위조 차단을 강제. 민감 전이는 Functions 전용 |
 
 <div align="center">
@@ -147,18 +148,20 @@ Firebase 없이 **mock 데이터로만** 띄우려면 `js/firebase-config.js`의
 │   ├─ app.js                   # UI 렌더·이벤트 (데이터는 store 통해서만 접근)
 │   ├─ store-firebase.js        # Firebase 어댑터 (실 백엔드)
 │   ├─ store.js                 # mock 어댑터 (localStorage)
-│   ├─ validate.js              # S1–S6 구조 검증
-│   ├─ version.js               # 버전 스냅샷 · semver 비교 · diff
-│   └─ spec-parse.js            # 헤더 메타·섹션 파싱 (slug·title·버전·Figma)
+│   ├─ validate.js              # S1–S6 · C1–C7 · P1–P7 구조 검증
+│   ├─ version.js               # 버전 스냅샷 · semver 비교 · diff · PRD 호환 등급
+│   ├─ spec-parse.js            # spec 헤더 메타·섹션 파싱 (slug·title·버전·Figma)
+│   └─ prd-parse.js             # PRD 파서 (표 헤더 · H1 섹션 · 주석 스트립)
 ├─ functions/
 │   ├─ index.js                 # listBaseBranches · createSpecPR · closeSpecPR · githubWebhook
-│   ├─ notify.js                # 상태 전이 → Discord 역할 멘션 알림
+│   ├─ notify.js                # 상태 전이·PRD 개정 → Discord 역할 멘션 알림
+│   ├─ semver.js                # 서버측 semver·PRD 호환 등급 (js/version.js 미러)
 │   └─ token-store.js           # 사용자 GitHub 토큰 Secret Manager 저장/조회
 ├─ firestore.rules · storage.rules   # 역할·전이·필드 잠금
 ├─ data/seed.js                 # mock 시드
 └─ docs/
     ├─ PRD.md                   # 정본 요구사항 (원천)
-    ├─ design/                  # 설계 명세 — state-machine · data-model · validation
+    ├─ design/                  # 설계 명세 — state-machine · data-model · validation · prd-track
     ├─ ops/                     # 운영 — infra-playbook · roadmap
     ├─ role/                    # 역할별 사용법 — DEVELOPER · DESIGNER
     ├─ v2/                      # 확장 설계 — notifications(구현됨) · impl-tracking · discussion(미착수)

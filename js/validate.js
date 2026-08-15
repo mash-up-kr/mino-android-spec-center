@@ -214,9 +214,116 @@
     return { ok: errors.length === 0, errors, warnings, meta };
   }
 
+  // ===================== PRD (P1–P7) =====================
+  // 기준 템플릿: `mino-sdd/template/prd-template.md` · 상세: docs/design/prd-track.md §3
+  // spec·체크리스트와 같은 원칙 — 골격은 하드 차단, 미확정(TBD:)은 경고.
+
+  // P3: 필수 섹션 4개 (H1, 순서). 숫자 접두사는 coreTitle 이 벗기고, 비교는 공백 무시.
+  const REQUIRED_PRD_SECTIONS = [
+    '서비스 개요 및 개발 방향', '목표 / 비목표', '화면 플로우별 기능 명세 및 UI/UX 규칙', '참고 자료',
+  ];
+  // P5: 템플릿 자리표시자. 여는 대괄호만 있는 항목은 접두 매칭(문장형 자리표시자).
+  const PRD_PLACEHOLDERS = [
+    '[PRODUCT_NAME]', '[PRD_VERSION]', '[CREATED_DATE]', '[PRD_AUTHOR]',
+    '[LAST_AMENDED_DATE]', '[LAST_AMENDED_AUTHOR]', '$ARGUMENTS',
+    '[SYS-00X]', '[SCR-00X]',
+    '[이 제품을 평이하게', '[개발 원칙 이름', '[도메인 명사', '[UI 컴포넌트',
+    '[제외하는 기능 이름]', '[가로지르는 경험 이름]', '[자료 종류]', '[플로우 이름]',
+  ];
+
+  /**
+   * @param body        PRD 원문 (`docs/prd/business-context.md`)
+   * @param prevVersion 저장돼 있는 현재 버전 (없으면 신규). P7 대조용.
+   * @returns { ok, errors, warnings, meta, sameVersion }
+   */
+  function validatePrd(body, prevVersion) {
+    const errors = [];
+    const warnings = [];
+    const add = (code, msg) => errors.push({ code, msg });
+    const warn = (code, msg) => warnings.push({ code, msg });
+    const P = window.MASCPrd;
+    const V = window.MASCVersion;
+    // ★ 주석을 걷어낸 사본으로 검사한다 — 템플릿 주석의 예시가 자리표시자로 오탐되는 걸 막는다.
+    const src = P.strip(body);
+    const meta = P.parseMeta(body);
+
+    // ── P1 — H1 제목 ──
+    const first = P.h1List(src)[0];
+    if (!first) {
+      add('P1', 'H1 제목(`# 제품 요구사항 문서 (PRD): {제품명}`)이 없습니다.');
+    } else if (!/^제품\s*요구사항\s*문서\s*(?:\(\s*PRD\s*\))?\s*[:：]/i.test(first.raw)) {
+      add('P1', `H1 "${first.raw}" 형식 오류 — \`# 제품 요구사항 문서 (PRD): {제품명}\` 이어야 합니다.`);
+    } else if (!meta.title) {
+      add('P1', 'H1 제목에서 제품명을 찾지 못했습니다.');
+    }
+
+    // ── P2 — 헤더 표 (버전 · 생성일 · 최종 수정일) ──
+    if (!meta.versionRaw) {
+      add('P2', '헤더 표에 `| **버전** | X.Y.Z |` 행이 없습니다.');
+    } else if (!meta.version) {
+      add('P2', `버전 "${meta.versionRaw}" 형식 오류 — \`X.Y.Z\` (semver) 여야 합니다.`);
+    }
+    [['생성일', meta.createdDate], ['최종 수정일', meta.lastAmendedDate]].forEach(([name, date]) => {
+      const raw = P.tableField(src, name);
+      if (!raw) add('P2', `헤더 표에 \`| **${name}** | … |\` 행이 없습니다.`);
+      else if (!date) add('P2', `${name} "${raw}" 에서 날짜를 찾지 못했습니다 — \`YYYY-MM-DD - {작성자}\` 형식이어야 합니다.`);
+    });
+
+    // ── P3 — 필수 섹션 4개 (순서) ──
+    const got = meta.sections.map((s) => s.key);
+    let cursor = 0;
+    const missing = [];
+    REQUIRED_PRD_SECTIONS.forEach((title) => {
+      const idx = got.indexOf(P.normTitle(title), cursor);
+      if (idx < 0) missing.push(title);
+      else cursor = idx + 1; // 순서 보장
+    });
+    if (missing.length) {
+      add('P3', `필수 섹션 누락/순서 오류: ${missing.join(' · ')} (${REQUIRED_PRD_SECTIONS.join(' → ')} 순서여야 함).`);
+    }
+    // `# 5. TBD` 등 뒤따르는 선택 섹션은 허용한다 (/mino-prd 가 TBD Q&A 로 덧붙임).
+
+    // ── P4 — 항목 ID ([SYS-00X]·[SCR-00X]) ──
+    if (!meta.goalIds.length) {
+      add('P4', '§2 목표에 `[SYS-001]` / `[SCR-001]` 형식 항목이 1개 이상 필요합니다.');
+    } else {
+      // P4-w: §2 ↔ §3 대응. 템플릿은 1:1 을 요구하지만 오탐 여지가 있어 경고로만 남긴다.
+      const onlyGoal = meta.goalIds.filter((id) => meta.specIds.indexOf(id) < 0);
+      const onlySpec = meta.specIds.filter((id) => meta.goalIds.indexOf(id) < 0);
+      if (onlyGoal.length) warn('P4', `§2 목표에만 있고 §3 명세에 없는 항목: ${onlyGoal.join(' · ')}`);
+      if (onlySpec.length) warn('P4', `§3 명세에만 있고 §2 목표에 없는 항목: ${onlySpec.join(' · ')}`);
+    }
+
+    // ── P5 — 자리표시자 잔여 (하드) ──
+    const left = PRD_PLACEHOLDERS.filter((p) => src.indexOf(p) >= 0);
+    if (left.length) {
+      add('P5', `치환되지 않은 템플릿 자리표시자: ${left.join(' · ')}`);
+    }
+
+    // ── P6 — `TBD:` 잔여 (경고) ──
+    // spec 은 `[TBD]` 대괄호, PRD 는 `TBD:` 접두다 (/mino-prd SKILL.md §4).
+    if (meta.tbdCount) {
+      warn('P6', `미해소 \`TBD:\` ${meta.tbdCount}건 — 확정이 필요한 정책입니다. 댓글로 논의하세요.`);
+    }
+
+    // ── P7 — 버전 정합 (회귀 차단 · 동일 버전은 확인) ──
+    let sameVersion = false;
+    if (prevVersion && meta.version) {
+      if (V.isRegression(prevVersion, meta.version)) {
+        add('P7', `버전이 뒤로 갔습니다 — 저장본 ${prevVersion} → 업로드 ${meta.version}. 최신 PRD 를 올리거나 \`/mino-prd\` 로 개정하세요.`);
+      } else if (V.levelBetween(prevVersion, meta.version) === 'same') {
+        sameVersion = true;
+        warn('P7', `저장본과 같은 버전(${meta.version})입니다 — 새 스냅샷을 만들지 않고 현재 버전의 본문만 갱신합니다.`);
+      }
+    }
+
+    return { ok: errors.length === 0, errors, warnings, meta, sameVersion };
+  }
+
   window.MASCValidate = {
-    validateSpec, validateChecklist,
+    validateSpec, validateChecklist, validatePrd,
     REQUIRED_H2, SPEC_STATUSES, PLACEHOLDERS,
     REQUIRED_CHECKLIST_H2, CHECKLIST_STATUSES, CHECKLIST_PLACEHOLDERS,
+    REQUIRED_PRD_SECTIONS, PRD_PLACEHOLDERS,
   };
 })();

@@ -58,8 +58,10 @@
   ];
 
   const state = { status: 'all', quick: new Set(), search: '', selectedId: null };
-  // Discord 알림 딥링크(?feature={id}, notifications.md §4) — 데이터 로드 후 1회 적용
-  let pendingDeepLink = new URLSearchParams(location.search).get('feature');
+  // Discord 알림 딥링크 — ?feature={id}(notifications.md §4) · ?prd=1(P8 알림)
+  const qs = new URLSearchParams(location.search);
+  let pendingDeepLink = qs.get('feature');
+  let pendingPrdLink = qs.has('prd');
   const $ = (sel) => document.querySelector(sel);
   const esc = (s) => String(s == null ? '' : s).replace(/&/g, '&amp;').replace(/</g, '&lt;');
   const userName = (uid) => { const u = auth.userOf(uid); return u ? u.name : (uid || ''); };
@@ -173,6 +175,8 @@
     });
 
     $('#upload-save').addEventListener('click', saveUpload);
+    $('#btn-prd').addEventListener('click', () => openPrd());
+    $('#prd-upload-save').addEventListener('click', savePrdUpload);
     $('#auth-relogin').addEventListener('click', async () => {
       closeModal('auth-help-modal');
       if (auth.loginGithub) { await auth.loginGithub(); } // 토큰 갱신 → 이후 PR 재시도
@@ -289,10 +293,12 @@
   }
 
   // ===================== Render =====================
-  function renderAll() { applyDeepLink(); renderKpis(); renderStatusList(); renderCenter(); renderDetail(); }
+  function renderAll() { applyDeepLink(); renderPrdChip(); renderKpis(); renderStatusList(); renderCenter(); renderDetail(); }
 
   // ?feature={id} 진입 — 해당 feature가 로드되어 있으면 선택하고 소비, 없으면 다음 렌더에서 재시도
   function applyDeepLink() {
+    // ?prd= 는 PRD 모달을 연다 (데이터가 아직 없으면 다음 렌더에서 재시도)
+    if (pendingPrdLink && prdDoc()) { pendingPrdLink = false; openPrd('doc'); }
     if (!pendingDeepLink) return;
     if (!features.get(pendingDeepLink)) return;
     state.selectedId = pendingDeepLink;
@@ -337,7 +343,7 @@
       const pr = f.prNumber ? `<a href="${f.prUrl}" target="_blank" rel="noopener" onclick="event.stopPropagation()">#${f.prNumber}</a>` : '<span class="feat-sub">—</span>';
       return `<tr class="${sel}" data-id="${f.featureId}">
         <td><div class="feat-title">${esc(f.title)}</div><div class="feat-sub mono">${esc(f.slug)}</div></td>
-        <td><div class="status-cell">${statusBadge(f.status)}${tbdBadge(f)}</div></td>
+        <td><div class="status-cell">${statusBadge(f.status)}${tbdBadge(f)}${compatBadge(f)}</div></td>
         <td class="mono">${esc(f.specVersion || '-')}</td>
         <td>${pr}</td></tr>`;
     }).join('');
@@ -560,7 +566,12 @@
           <button class="btn-ghost" data-doc="checklist"${f.checklistBody ? '' : ' disabled'}>📋 체크리스트 보기</button>
         </div>
         <div class="feat-sub" style="margin-top:6px">
-          상태 ${esc(f.specStatus || '-')} · 기준 PRD ${esc(f.prdVersion || '-')} · 작성자 ${esc(userName(f.createdBy))}
+          상태 ${esc(f.specStatus || '-')} · 작성자 ${esc(userName(f.createdBy))}
+        </div>
+        <div class="prd-line">
+          기준 PRD <span class="mono">${esc(f.prdVersion || '없음')}</span>
+          ${compatBadge(f, true)}
+          <button class="btn-link" data-act="open-prd">PRD 보기</button>
         </div>
         ${checklistNoticeHtml(f)}
         ${draftNoticeHtml(f)}
@@ -675,7 +686,14 @@
   function wireActions(panel, f) {
     const on = (act, fn) => { const b = panel.querySelector(`[data-act="${act}"]`); if (b) b.addEventListener('click', fn); };
     on('edit-spec', () => openUpload(f));
-    on('request-review', () => doTransition(() => features.requestReview(f.featureId)));
+    on('open-prd', () => openPrd('doc'));
+    on('request-review', () => {
+      // 게이트는 걸지 않는다 — PRD 가 뒤처졌다는 사실만 알리고 진행 여부는 개발자가 정한다.
+      const c = compatOf(f);
+      if (c.level === 'major' && !confirm(
+        `${c.hint}\n\n그대로 검수에 올릴까요?`)) return;
+      doTransition(() => features.requestReview(f.featureId));
+    });
     on('review-spec', () => openDoc(f));
     on('create-pr', () => {
       const head = specBranchOf(f.baseBranch);
@@ -1076,6 +1094,456 @@
         + (r.versionStale ? '\n\n⚠️ 버전이 그대로입니다. 로컬 /mino-spec 개정으로 버전을 올린 뒤 다시 올리세요.' : ''));
     }
     select(r.feature.featureId); renderAll();
+  }
+
+  // ===================== PRD (P8) =====================
+  // spec 의 상위 문서. 컨펌 게이트가 없어 상태 전이도 없다 — 업로드·논의·버전 추적만.
+  // 설계: docs/design/prd-track.md
+  const PRD = window.MASC.prd;
+  let prdTab = 'doc';          // doc | versions | specs
+  let prdAnchor = null;        // 선택된 섹션 앵커(댓글 필터 + 새 댓글의 anchor)
+  let prdReplyTo = null;       // 답글 대상 msgId
+  let prdEditingMsg = null;    // 편집 중인 댓글 msgId
+
+  const prdDoc = () => (PRD ? PRD.get() : null);
+  const prdComments = () => (PRD ? PRD.comments.list().filter((c) => !c.deleted || hasReply(c)) : []);
+  // 소프트 삭제된 댓글이라도 답글이 달려 있으면 자리를 남긴다(스레드 끊김 방지)
+  const hasReply = (c) => PRD.comments.list().some((x) => x.replyTo === c.msgId && !x.deleted);
+
+  /** feature 의 기준 PRD 버전 ↔ 현재 PRD 버전 호환 등급 */
+  function compatOf(f) {
+    const p = prdDoc();
+    return V2.prdCompat(f && f.prdVersion, p ? p.version : '');
+  }
+  // 목록에서는 **문제만** 보여준다 (tbdBadge 와 같은 규칙) — 최신·무해·미연결은 침묵.
+  function compatBadge(f, always) {
+    const c = compatOf(f);
+    if (!always && ['same', 'patch', 'none'].includes(c.level)) return '';
+    return badge(c.label, c.color, c.hint);
+  }
+
+  // 헤더 PRD 칩 — 등록 전이면 개발자에게만 업로드 유도
+  function renderPrdChip() {
+    const btn = $('#btn-prd'); if (!btn) return;
+    const p = prdDoc();
+    const n = PRD ? PRD.comments.list().filter((c) => !c.deleted).length : 0;
+    btn.innerHTML = p
+      ? `📘 PRD <span class="mono">${esc(p.version)}</span>${n ? ` · 💬 ${n}` : ''}`
+      : '📘 PRD 미등록';
+    btn.classList.toggle('warn', !p);
+    btn.style.display = (p || auth.isDeveloper()) ? '' : 'none';
+  }
+
+  function openPrd(tab) {
+    if (tab) prdTab = tab;
+    if (!prdDoc()) { prdTab = 'doc'; }
+    renderPrd();
+    openModal('prd-modal');
+  }
+
+  function renderPrd() {
+    const p = prdDoc();
+    $('#prd-modal-title').textContent = p ? `${p.title} · PRD ${p.version}` : 'PRD';
+    const TABS = [
+      { key: 'doc', label: '📄 문서' },
+      { key: 'versions', label: '🧬 버전 이력' },
+      { key: 'specs', label: '🔗 연결된 스펙' },
+    ];
+    $('#prd-tabs').innerHTML = TABS.map((t) =>
+      `<button class="doc-tab ${prdTab === t.key ? 'active' : ''}" data-prdtab="${t.key}"${p ? '' : ' disabled'}>${t.label}</button>`).join('');
+    $('#prd-tabs').querySelectorAll('[data-prdtab]').forEach((b) =>
+      b.addEventListener('click', () => { prdTab = b.dataset.prdtab; renderPrd(); }));
+
+    const body = $('#prd-modal-body');
+    if (!p) {
+      body.innerHTML = `<div class="prd-empty">
+        <p class="desc">아직 PRD 가 등록되지 않았습니다.</p>
+        <div class="legend-note">로컬 <code>/mino-prd</code> 로 만든
+          <code>docs/prd/business-context.md</code> 를 업로드하세요.
+          PRD 는 프로젝트당 1개이고, spec 헤더의 <code>**기준 PRD 버전**</code> 이 이 문서를 가리킵니다.</div>
+        ${auth.isDeveloper() ? '<div class="detail-actions"><button class="btn-primary" id="prd-upload-open">PRD 업로드</button></div>' : ''}
+      </div>`;
+      const up = $('#prd-upload-open');
+      if (up) up.addEventListener('click', () => { closeModal('prd-modal'); openPrdUpload(); });
+      return;
+    }
+    if (prdTab === 'versions') return renderPrdVersions(p, body);
+    if (prdTab === 'specs') return renderPrdSpecs(p, body);
+    return renderPrdDocTab(p, body);
+  }
+
+  // ── 문서 탭: 좌 본문(섹션 앵커) / 우 논의 스레드 ──
+  function renderPrdDocTab(p, body) {
+    body.innerHTML = `
+      <div class="prd-head">
+        <div class="feat-sub">
+          최초 ${esc(p.createdDate || '-')} ${esc(p.prdAuthor || '')} ·
+          최종 ${esc(p.lastAmendedDate || '-')} ${esc(p.lastAmendedAuthor || '')} ·
+          항목 ${(p.itemIds || []).length}개
+        </div>
+        ${auth.isDeveloper() ? '<button class="btn-ghost" id="prd-edit">PRD 개정 업로드</button>' : ''}
+      </div>
+      <div class="prd-grid">
+        <div class="prd-doc md" id="prd-doc"></div>
+        <div class="prd-thread" id="prd-thread"></div>
+      </div>`;
+    $('#prd-doc').innerHTML = mdToHtml(p.body || '');
+    addPrdAnchors($('#prd-doc'));
+    const edit = $('#prd-edit');
+    if (edit) edit.addEventListener('click', () => { closeModal('prd-modal'); openPrdUpload(); });
+    renderPrdThread();
+  }
+
+  // 제목 옆 💬 — 클릭하면 그 섹션으로 논의를 좁힌다(새 댓글의 anchor 도 그 섹션이 된다)
+  function addPrdAnchors(container) {
+    container.querySelectorAll('h3').forEach((h) => {
+      const section = h.textContent.trim();
+      const n = PRD.comments.list().filter((c) => !c.deleted && c.anchor === section).length;
+      const btn = document.createElement('button');
+      btn.className = 'cmt-add' + (prdAnchor === section ? ' on' : '') + (n ? ' has' : '');
+      btn.type = 'button';
+      btn.textContent = n ? `💬 ${n}` : '💬';
+      btn.title = '이 섹션의 논의';
+      h.appendChild(btn);
+      btn.addEventListener('click', () => {
+        prdAnchor = (prdAnchor === section) ? null : section;
+        renderPrd();
+      });
+    });
+  }
+
+  function renderPrdThread() {
+    const el = $('#prd-thread'); if (!el) return;
+    const all = PRD.comments.list();
+    const visible = all.filter((c) => !prdAnchor || c.anchor === prdAnchor);
+    const roots = visible.filter((c) => !c.replyTo);
+    const me = auth.currentUser();
+
+    const bubble = (c, isReply) => {
+      const mine = me && c.authorUid === me.uid;
+      if (c.deleted) {
+        return `<div class="pc ${isReply ? 'reply' : ''} deleted"><span class="feat-sub">삭제된 댓글</span></div>`;
+      }
+      if (prdEditingMsg === c.msgId) {
+        return `<div class="pc ${isReply ? 'reply' : ''} editing">
+          <textarea class="pc-edit-input" data-edit="${esc(c.msgId)}">${esc(c.body)}</textarea>
+          <div class="pc-actions">
+            <button class="btn-add" data-edit-save="${esc(c.msgId)}">저장</button>
+            <button class="btn-ghost" data-edit-cancel="1">취소</button>
+          </div></div>`;
+      }
+      return `<div class="pc ${isReply ? 'reply' : ''}">
+        <div class="pc-h">
+          <span class="pc-who">${esc(userName(c.authorUid))}</span>
+          <span class="lu-role ${esc(c.authorRole || '')}">${c.authorRole === 'designer' ? '디자이너' : '개발자'}</span>
+          <span class="feat-sub">${esc(shortTime(c.createdAt))}${c.updatedAt ? ' (수정됨)' : ''}</span>
+          ${!prdAnchor && c.anchor ? `<span class="pc-anchor" title="${esc(c.anchor)}">§ ${esc(c.anchor)}</span>` : ''}
+        </div>
+        <div class="pc-body">${mentionHtml(c.body)}</div>
+        <div class="pc-actions">
+          ${isReply ? '' : `<button class="btn-link" data-reply="${esc(c.msgId)}">답글</button>`}
+          ${mine ? `<button class="btn-link" data-edit-start="${esc(c.msgId)}">수정</button>
+                    <button class="btn-link danger" data-del="${esc(c.msgId)}">삭제</button>` : ''}
+        </div></div>`;
+    };
+
+    const list = roots.map((c) => {
+      const replies = all.filter((r) => r.replyTo === c.msgId);
+      return bubble(c, false) + replies.map((r) => bubble(r, true)).join('');
+    }).join('');
+
+    const replyTarget = prdReplyTo ? all.find((c) => c.msgId === prdReplyTo) : null;
+    el.innerHTML = `
+      <div class="prd-thread-h">
+        <b>💬 논의</b>
+        <span class="feat-sub">${visible.filter((c) => !c.deleted).length}건</span>
+        ${prdAnchor ? `<span class="pc-anchor on">§ ${esc(prdAnchor)}<button class="pc-anchor-x" id="prd-anchor-clear" title="전체 보기">×</button></span>` : ''}
+      </div>
+      <div class="prd-thread-list">${list || '<div class="feat-sub">아직 논의가 없습니다. 첫 코멘트를 남겨보세요.</div>'}</div>
+      <div class="prd-compose">
+        ${replyTarget ? `<div class="pc-replying">↳ <b>${esc(userName(replyTarget.authorUid))}</b> 에게 답글
+          <button class="pc-anchor-x" id="prd-reply-clear">×</button></div>` : ''}
+        ${prdAnchor ? `<div class="feat-sub">§ ${esc(prdAnchor)} 에 남깁니다</div>` : ''}
+        <textarea id="prd-cmt-input" placeholder="PRD 에 대한 의견을 남기세요. @핸들 로 멘션할 수 있습니다."></textarea>
+        <div class="prd-compose-foot">
+          <span class="editor-msg" id="prd-cmt-msg"></span>
+          <div class="spacer"></div>
+          <button class="btn-primary" id="prd-cmt-send">등록</button>
+        </div>
+      </div>`;
+
+    const clear = $('#prd-anchor-clear');
+    if (clear) clear.addEventListener('click', () => { prdAnchor = null; renderPrd(); });
+    const rclear = $('#prd-reply-clear');
+    if (rclear) rclear.addEventListener('click', () => { prdReplyTo = null; renderPrdThread(); });
+    el.querySelectorAll('[data-reply]').forEach((b) =>
+      b.addEventListener('click', () => { prdReplyTo = b.dataset.reply; renderPrdThread(); $('#prd-cmt-input').focus(); }));
+    el.querySelectorAll('[data-edit-start]').forEach((b) =>
+      b.addEventListener('click', () => { prdEditingMsg = b.dataset.editStart; renderPrdThread(); }));
+    el.querySelectorAll('[data-edit-cancel]').forEach((b) =>
+      b.addEventListener('click', () => { prdEditingMsg = null; renderPrdThread(); }));
+    el.querySelectorAll('[data-edit-save]').forEach((b) =>
+      b.addEventListener('click', async () => {
+        const ta = el.querySelector(`[data-edit="${b.dataset.editSave}"]`);
+        const r = await PRD.comments.edit(b.dataset.editSave, ta.value);
+        if (!r.ok) { alert(r.error); return; }
+        prdEditingMsg = null; afterPrdWrite();
+      }));
+    el.querySelectorAll('[data-del]').forEach((b) =>
+      b.addEventListener('click', async () => {
+        if (!confirm('이 댓글을 삭제할까요?')) return;
+        const r = await PRD.comments.remove(b.dataset.del);
+        if (!r.ok) { alert(r.error); return; }
+        afterPrdWrite();
+      }));
+    $('#prd-cmt-send').addEventListener('click', postPrdComment);
+    $('#prd-cmt-input').addEventListener('keydown', (e) => {
+      // 한글 IME 조합 중 Enter 는 글자 확정용 (기존 인라인 코멘트와 같은 가드)
+      if (e.key !== 'Enter' || !(e.metaKey || e.ctrlKey) || e.isComposing || e.keyCode === 229) return;
+      e.preventDefault(); postPrdComment();
+    });
+  }
+
+  async function postPrdComment() {
+    const ta = $('#prd-cmt-input');
+    const body = (ta.value || '').trim();
+    if (!body) { $('#prd-cmt-msg').textContent = '내용을 입력하세요.'; return; }
+    $('#prd-cmt-msg').textContent = '등록 중…';
+    const r = await PRD.comments.post({ body, anchor: prdAnchor, replyTo: prdReplyTo });
+    if (!r.ok) { $('#prd-cmt-msg').textContent = r.error; return; }
+    prdReplyTo = null;
+    afterPrdWrite();
+  }
+
+  // mock 은 구독이 없으므로 직접 다시 그린다 (firebase 는 onSnapshot 이 renderAll 을 부른다)
+  function afterPrdWrite() { renderPrd(); renderPrdChip(); if (!FB) renderAll(); }
+
+  const mentionHtml = (body) => esc(body)
+    .replace(/@([A-Za-z0-9_-]{2,39})/g, '<span class="mention">@$1</span>')
+    .replace(/\n/g, '<br />');
+  function shortTime(iso) {
+    if (!iso) return '';
+    const s = String(iso);
+    return s.length >= 16 ? s.slice(0, 10) + ' ' + s.slice(11, 16) : s;
+  }
+
+  // ── 버전 이력 탭 ──
+  function renderPrdVersions(p, body) {
+    const idx = PRD.versionIndex();
+    const items = idx.map((e, i) => ({ e, i })).reverse().map(({ e, i }) => {
+      const tag = VER_TAG[e.level] || badge(e.level || '-', 'gray');
+      const editBtn = auth.isDeveloper()
+        ? `<button class="ver-edit" data-prd-ver="${esc(e.version)}" data-reason="${esc(e.reason || '')}" title="메모 편집">✏️</button>` : '';
+      const diffBtn = i > 0
+        ? `<button class="ver-diff" data-prd-from="${esc(idx[i - 1].version)}" data-prd-to="${esc(e.version)}">변경분</button>` : '';
+      return `<div class="ver-item">
+        <span class="ver-num mono">${esc(e.version)}</span> ${tag}
+        <span class="feat-sub">${esc(e.at || '')} ${esc(userName(e.uploadedBy) || '')}</span>${editBtn}${diffBtn}
+        <div class="ver-reason">${esc(e.reason || '')}</div>
+      </div>`;
+    }).join('');
+    const opts = (sel) => idx.map((e) =>
+      `<option value="${esc(e.version)}"${e.version === sel ? ' selected' : ''}>${esc(e.version)}</option>`).join('');
+    const from = idx.length >= 2 ? idx[idx.length - 2].version : (idx[0] || {}).version;
+    const to = (idx[idx.length - 1] || {}).version;
+    body.innerHTML = `
+      <div class="prd-vercompare">
+        <span class="lbl">두 버전 비교</span>
+        <select id="prd-diff-from" class="base-select">${opts(from)}</select>
+        <span>→</span>
+        <select id="prd-diff-to" class="base-select">${opts(to)}</select>
+        <button class="btn-primary" id="prd-diff-go"${idx.length >= 2 ? '' : ' disabled'}>변경분 보기</button>
+      </div>
+      <div class="detail-section"><h3>버전 스냅샷 <span class="feat-sub">(버전은 /mino-prd 소유)</span></h3>${items}</div>`;
+    $('#prd-diff-go').addEventListener('click', () =>
+      openPrdDiff($('#prd-diff-from').value, $('#prd-diff-to').value));
+    body.querySelectorAll('[data-prd-from]').forEach((b) =>
+      b.addEventListener('click', () => openPrdDiff(b.dataset.prdFrom, b.dataset.prdTo)));
+    body.querySelectorAll('[data-prd-ver]').forEach((b) =>
+      b.addEventListener('click', async () => {
+        const next = prompt(`버전 메모 (${b.dataset.prdVer})`, b.dataset.reason || '');
+        if (next == null) return;
+        const r = await PRD.editVersionReason(b.dataset.prdVer, next.trim());
+        if (!r.ok) { alert(r.error); return; }
+        renderPrd();
+      }));
+  }
+
+  // ── 연결된 스펙 탭: 호환 등급 리포트 ──
+  const COMPAT_ORDER = { major: 0, ahead: 1, minor: 2, patch: 3, same: 4, none: 5 };
+  function renderPrdSpecs(p, body) {
+    const rows = features.all()
+      .map((f) => ({ f, c: compatOf(f) }))
+      .sort((a, b) => (COMPAT_ORDER[a.c.level] - COMPAT_ORDER[b.c.level]) || a.f.title.localeCompare(b.f.title));
+    if (!rows.length) { body.innerHTML = '<div class="detail-empty">등록된 스펙이 없습니다.</div>'; return; }
+    const stale = rows.filter((r) => V2.STALE_LEVELS.includes(r.c.level));
+    body.innerHTML = `
+      ${stale.length
+        ? `<div class="up-warns"><div class="lbl">재실행 검토 대상 ${stale.length}건</div>
+           <div class="up-warn">PRD ${esc(p.version)} 개정 이후 <code>/mino-spec</code> 을 다시 돌리지 않은 스펙입니다.</div></div>`
+        : '<div class="legend-note">모든 스펙이 현재 PRD 버전과 정합합니다.</div>'}
+      <table class="feature-table"><thead>
+        <tr><th>Feature</th><th>spec 버전</th><th>기준 PRD</th><th>정합</th></tr></thead>
+        <tbody>${rows.map(({ f, c }) => `
+          <tr data-id="${esc(f.featureId)}">
+            <td><div class="feat-title">${esc(f.title)}</div><div class="feat-sub mono">${esc(f.slug)}</div></td>
+            <td class="mono">${esc(f.specVersion || '-')}</td>
+            <td class="mono">${esc(f.prdVersion || '없음')}</td>
+            <td>${badge(c.label, c.color, c.hint)}</td>
+          </tr>`).join('')}</tbody></table>`;
+    body.querySelectorAll('tr[data-id]').forEach((tr) =>
+      tr.addEventListener('click', () => { closeModal('prd-modal'); select(tr.dataset.id); }));
+  }
+
+  // ── PRD 버전 diff (본문은 지연 로드) ──
+  async function openPrdDiff(fromVer, toVer) {
+    if (!fromVer || !toVer || fromVer === toVer) { alert('서로 다른 두 버전을 선택하세요.'); return; }
+    $('#diff-modal-title').textContent = `PRD 변경분 · ${fromVer} → ${toVer}`;
+    $('#diff-modal-body').innerHTML = '<div class="feat-sub">스냅샷을 불러오는 중…</div>';
+    openModal('diff-modal');
+    const [a, b] = await Promise.all([PRD.versionBody(fromVer), PRD.versionBody(toVer)]);
+    const el = $('#diff-modal-body');
+    if (a == null || b == null) {
+      el.innerHTML = '<div class="feat-sub">해당 버전의 스냅샷을 찾을 수 없습니다.</div>';
+      return;
+    }
+    const rows = V2.diffLines(a, b);
+    if (!rows.some((r) => r.t !== '=')) {
+      el.innerHTML = '<div class="feat-sub">두 버전의 본문이 동일합니다.</div>';
+      return;
+    }
+    const cs = window.MASCPrd.changedSections(a, b);
+    const chip = (t, cls) => `<span class="sec-chip ${cls}">${esc(t)}</span>`;
+    const summary = (cs.changed.length || cs.added.length || cs.removed.length)
+      ? `<div class="diff-sections"><span class="lbl">변경 섹션</span>
+          ${cs.added.map((t) => chip(t, 'add')).join('')}
+          ${cs.changed.map((t) => chip(t, 'chg')).join('')}
+          ${cs.removed.map((t) => chip(t, 'del')).join('')}</div>`
+      : '';
+    const coarse = rows.coarse
+      ? '<div class="legend-note">문서가 커서 정밀 비교(LCS)를 생략하고 변경 구간을 통째로 표시합니다.</div>'
+      : '';
+    el.innerHTML = summary + coarse
+      + `<div class="diff-legend"><span class="del">− ${esc(fromVer)}</span> <span class="add">+ ${esc(toVer)}</span></div>`
+      + `<div class="diff-view">${diffBodyHtml(rows)}</div>`;
+  }
+
+  // ── PRD 업로드 (개발자 한정) ──
+  let prdUpload = null; // { body, name, expectedVersion }
+
+  function openPrdUpload() {
+    if (!auth.isDeveloper()) { alert('PRD 업로드는 개발자만 가능합니다.'); return; }
+    const p = prdDoc();
+    prdUpload = { body: '', name: '', expectedVersion: p ? p.version : null };
+    $('#prd-upload-title').textContent = p ? `PRD 개정 업로드 (현재 ${p.version})` : 'PRD 업로드';
+    prdUploadMsg('', false);
+    $('#prd-upload-body').innerHTML = `
+      <div class="paste-help">
+        <span>로컬 <code>/mino-prd</code> 산출물 <code>docs/prd/business-context.md</code> 를 첨부하세요.
+        버전은 헤더 표의 <code>**버전**</code> 값을 그대로 읽습니다 — 대시보드는 버전을 올리지 않습니다.
+        <code>TBD:</code> 가 남아 있어도 업로드할 수 있습니다(경고만 표시 — 댓글로 논의할 항목).</span>
+      </div>
+      <div class="upload-grid">
+        <div class="upload-editor">
+          <div id="prd-errors" class="up-errors"></div>
+          <div id="prd-dropzone" class="dropzone">PRD 파일을 여기로 drag-drop
+            <input type="file" id="prd-file" accept=".md" hidden />
+            <button class="btn-add" type="button" id="prd-pick">파일 선택</button></div>
+          <div class="up-slots" id="prd-slot"></div>
+        </div>
+        <div class="upload-preview">
+          <div class="preview-head"><div class="lbl">미리보기</div></div>
+          <div id="prd-preview" class="md up-preview"></div>
+        </div>
+      </div>`;
+    wirePrdDropzone();
+    renderPrdSlot();
+    openModal('prd-upload-modal');
+  }
+
+  function renderPrdSlot() {
+    const filled = !!(prdUpload.body || '').trim();
+    const m = filled ? window.MASCPrd.parseMeta(prdUpload.body) : null;
+    const line = filled
+      ? `<div class="slot-name mono">${esc(prdUpload.name || 'business-context.md')}</div>
+         <div class="slot-meta feat-sub">${esc([m.title || '제목 ?', m.version ? `v${m.version}` : '버전 ?',
+        `항목 ${(m.goalIds || []).length}개`].join(' · '))}</div>`
+      : '<div class="slot-meta feat-sub">docs/prd/business-context.md — 필수</div>';
+    $('#prd-slot').innerHTML = `<div class="up-slot ${filled ? 'filled' : 'empty'}">
+      <div class="slot-ico">📘</div>
+      <div class="slot-main">
+        <div class="slot-title">business-context.md ${filled ? badge('첨부됨', 'green') : badge('미첨부', 'red')}
+          <span class="slot-hint feat-sub">프로젝트당 1개 · 전원 논의 대상</span></div>
+        ${line}
+      </div>
+      <button class="btn-add" type="button" id="prd-pick2">${filled ? '교체' : '파일 선택'}</button>
+    </div>`;
+    $('#prd-pick2').addEventListener('click', () => $('#prd-file').click());
+    $('#prd-preview').innerHTML = filled ? mdToHtml(prdUpload.body) : '<div class="feat-sub">파일을 첨부하면 여기에 렌더됩니다.</div>';
+  }
+
+  function wirePrdDropzone() {
+    const dz = $('#prd-dropzone'), fi = $('#prd-file');
+    $('#prd-pick').addEventListener('click', () => fi.click());
+    fi.addEventListener('change', () => { readPrdFile(fi.files[0]); fi.value = ''; });
+    const zone = $('#prd-upload-body');
+    ['dragover', 'dragenter'].forEach((ev) => zone.addEventListener(ev, (e) => { e.preventDefault(); dz.classList.add('over'); }));
+    ['dragleave', 'drop'].forEach((ev) => zone.addEventListener(ev, (e) => { e.preventDefault(); dz.classList.remove('over'); }));
+    zone.addEventListener('drop', (e) => readPrdFile(e.dataTransfer.files[0]));
+  }
+
+  function readPrdFile(file) {
+    if (!file) return;
+    if (!/\.md$/i.test(file.name)) return prdUploadMsg('.md 파일만 첨부할 수 있습니다.');
+    const reader = new FileReader();
+    reader.onload = () => {
+      const text = String(reader.result || '');
+      // spec/체크리스트를 잘못 던진 경우를 본문 H1 으로 잡아준다
+      if (/^#\s*(스펙\s*명세서|Spec\s*품질\s*체크리스트)/im.test(text)) {
+        return prdUploadMsg('spec 또는 체크리스트 파일입니다 — PRD(`business-context.md`)를 첨부하세요.');
+      }
+      prdUpload.body = text; prdUpload.name = file.name;
+      prdUploadMsg('', false);
+      renderPrdSlot();
+    };
+    reader.onerror = () => prdUploadMsg('파일을 읽지 못했습니다.');
+    reader.readAsText(file);
+  }
+
+  function prdUploadMsg(t, err = true) {
+    const el = $('#prd-upload-msg'); el.textContent = t; el.classList.toggle('error', err);
+  }
+
+  async function savePrdUpload() {
+    const body = (prdUpload && prdUpload.body) || '';
+    if (!body.trim()) return prdUploadMsg('PRD 파일을 첨부하세요.');
+    const r = V.validatePrd(body, prdUpload.expectedVersion);
+    const groups = [{ label: 'docs/prd/business-context.md', errors: r.errors, warnings: r.warnings }];
+    const box = $('#prd-errors');
+    box.innerHTML = issuesHtml(groups);
+    if (r.errors.length) {
+      prdUploadMsg(`검증 실패 ${r.errors.length}건 — 로컬에서 수정한 뒤 다시 첨부하세요.`);
+      box.scrollIntoView({ block: 'nearest' });
+      return;
+    }
+    if (r.sameVersion && !confirm(
+      `저장본과 같은 버전(${r.meta.version})입니다.\n새 스냅샷을 만들지 않고 현재 버전의 본문만 갱신합니다. 계속할까요?`)) return;
+    prdUploadMsg(r.warnings.length ? `경고 ${r.warnings.length}건과 함께 저장 중…` : '저장 중…', false);
+    const res = await PRD.save({ body, expectedVersion: prdUpload.expectedVersion });
+    if (!res.ok) {
+      prdUploadMsg(res.error || 'PRD 저장 실패');
+      if (res.conflict) prdUpload.expectedVersion = (prdDoc() || {}).version || null;
+      return;
+    }
+    closeModal('prd-upload-modal');
+    const lv = { init: '등록', major: 'MAJOR 개정', minor: 'MINOR 개정', patch: 'PATCH 개정', same: '본문 갱신' };
+    const stale = features.all().filter((f) => V2.STALE_LEVELS.includes(compatOf(f).level));
+    alert(`PRD ${res.created ? '등록' : lv[res.level] || '갱신'} 완료 — ${r.meta.version}`
+      + (stale.length ? `\n\n기준 PRD 버전이 뒤처진 스펙 ${stale.length}건이 있습니다:\n`
+        + stale.map((f) => `· ${f.title} (기준 ${f.prdVersion || '없음'})`).join('\n')
+        + '\n\n[연결된 스펙] 탭에서 확인하세요.' : ''));
+    renderPrdChip(); renderAll();
+    openPrd(stale.length ? 'specs' : 'doc');
   }
 
   // ===================== Boot =====================

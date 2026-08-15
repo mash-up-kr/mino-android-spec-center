@@ -23,6 +23,7 @@ const { onRequest, onCall, HttpsError } = require('firebase-functions/v2/https')
 const { defineSecret } = require('firebase-functions/params');
 const admin = require('firebase-admin');
 const { Octokit } = require('@octokit/rest');
+const { compatLevel } = require('./semver');
 
 admin.initializeApp();
 const db = admin.firestore();
@@ -32,13 +33,17 @@ const { getUserToken, storeGithubToken } = require('./token-store');
 exports.storeGithubToken = storeGithubToken;
 
 // ===================== 0b) 알림 P5.2 (notify.js) — 상태 전이 → Discord =====================
-const { notifyOnFeatureWrite } = require('./notify');
+const { notifyOnFeatureWrite, notifyOnPrdWrite, notifyOnPrdComment } = require('./notify');
 exports.notifyOnFeatureWrite = notifyOnFeatureWrite;
+// P8 — PRD 등록/개정 알림 + 논의 멘션 알림
+exports.notifyOnPrdWrite = notifyOnPrdWrite;
+exports.notifyOnPrdComment = notifyOnPrdComment;
 
 const GITHUB_CLIENT_ID = defineSecret('GITHUB_CLIENT_ID');
 const GITHUB_CLIENT_SECRET = defineSecret('GITHUB_CLIENT_SECRET');
 const GITHUB_WEBHOOK_SECRET = defineSecret('GITHUB_WEBHOOK_SECRET');
 
+const PRD_ID = 'business-context';   // PRD 는 프로젝트당 1개 (docs/prd/business-context.md)
 const OWNER = 'mash-up-kr';
 const REPO = 'Team-MINO-Android';
 // `/issue` 산출 브랜치 형태: <prefix>/<이슈번호>-<slug>/base (branch-naming.md)
@@ -114,11 +119,14 @@ exports.createSpecPR = onCall(async (request) => {
   const featureId = request.data && request.data.featureId;
   if (!featureId) throw new HttpsError('invalid-argument', 'featureId 누락');
 
-  const [userSnap, featSnap] = await Promise.all([
+  const [userSnap, featSnap, prdSnap] = await Promise.all([
     db.doc(`users/${uid}`).get(),
     db.doc(`features/${featureId}`).get(),
+    db.doc(`prds/${PRD_ID}`).get(),
   ]);
   if (!featSnap.exists) throw new HttpsError('not-found', 'feature 없음');
+  // PRD 는 없을 수도 있다(미등록) → 그 경우 정합 줄을 생략한다.
+  const prdVersion = prdSnap.exists ? (prdSnap.data().version || '') : '';
   const user = userSnap.data() || {};
   const f = featSnap.data();
   if (user.role !== 'developer') throw new HttpsError('permission-denied', '개발자만 PR 생성');
@@ -167,7 +175,7 @@ exports.createSpecPR = onCall(async (request) => {
     const pr = await octokit.pulls.create({
       owner: OWNER, repo: REPO, base: baseBranch, head: branch,
       title: `docs(spec): ${slug} ${version}`.trim(),
-      body: prTemplate(f, baseBranch, branch),
+      body: prTemplate(f, baseBranch, branch, prdVersion),
     });
     await octokit.issues.addLabels({ owner: OWNER, repo: REPO, issue_number: pr.data.number, labels: ['spec'] }).catch(() => {});
     // 작업자(개발자)를 PR 담당자(assignee)로 지정 — 실패해도 PR은 유지
@@ -267,7 +275,23 @@ function checklistSummary(body) {
   return { status, checked, total };
 }
 
-function prTemplate(f, baseBranch, headBranch) {
+// 기준 PRD 정합 (P8·요구사항 ③) — 게이트가 아니라 **머지 전 확인 항목**으로 남긴다.
+function prdAlignLine(f, prdVersion) {
+  if (!prdVersion) return null;                       // PRD 미등록이면 줄 자체를 생략
+  const base = f.prdVersion || '없음';
+  const level = compatLevel(f.prdVersion, prdVersion);
+  if (level === 'same' || level === 'patch') return `- [x] 기준 PRD 최신 (PRD \`${prdVersion}\`)`;
+  if (level === 'ahead') {
+    return `- [ ] PRD 미업로드 — spec 기준 \`${base}\` / 등록된 PRD \`${prdVersion}\` (최신 PRD를 대시보드에 올려주세요)`;
+  }
+  if (level === 'none') return `- [ ] 기준 PRD 미연결 — spec 헤더 \`**기준 PRD 버전**\` 확인 필요`;
+  const what = level === 'major'
+    ? 'MVP 경계·용어가 바뀌었습니다 — `/mino-spec` 재실행 필요'
+    : '항목이 추가됐습니다 — 주제가 겹치면 재실행 검토';
+  return `- [ ] 기준 PRD 뒤처짐 (${level.toUpperCase()}) — spec 기준 \`${base}\` / 현재 PRD \`${prdVersion}\` · ${what}`;
+}
+
+function prTemplate(f, baseBranch, headBranch, prdVersion) {
   const issue = (BASE_BRANCH_RE.exec(baseBranch || '') || [])[1];
   // DRAFT·[TBD] 스펙도 업로드·컨펌이 가능하므로 체크 상태를 실제 산출물 값으로 반영한다.
   const dir = `docs/specs/${f.slug}`;
@@ -290,12 +314,13 @@ function prTemplate(f, baseBranch, headBranch) {
     '### 얼라인 체크리스트',
     '- [x] spec 컨펌됨 (디자이너 승인)',
     quality,
+    prdAlignLine(f, prdVersion),
     f.specStatus === 'CREATED' ? null : `- [ ] spec 헤더 상태 확정 — 현재 \`${f.specStatus || '미상'}\``,
     tbd ? `- [ ] 미해소 \`[TBD]\` ${tbd}건 확정` : null,
     '- [ ] 담당자 확인',
     '',
     `> \`${headBranch}\` → \`${baseBranch}\``,
-    `> slug: \`${f.slug}\` · 버전: \`${f.specVersion || ''}\` · 기준 PRD: \`${f.prdVersion || '없음'}\``,
+    `> slug: \`${f.slug}\` · 버전: \`${f.specVersion || ''}\` · 기준 PRD: \`${f.prdVersion || '없음'}\`${prdVersion ? ` (현재 PRD \`${prdVersion}\`)` : ''}`,
     issue ? `> 관련 이슈: #${issue}` : null,
     f.figmaSources && f.figmaSources.length ? `> 출처: ${f.figmaSources.join(' , ')}` : null,
     '',

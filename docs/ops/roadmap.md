@@ -129,6 +129,27 @@
 - [x] mock 모드 e2e 스모크(첨부→자동분류→검증→저장→상세 반영) 통과
 - [ ] 실 e2e — 실제 `/mino-spec` 산출물로 업로드 → 컨펌 → PR 2파일 확인 (Functions·rules 재배포 필요)
 
+## P8 · PRD 트랙 (상위 문서) — 코드 완료·배포 대기 (2026-08-15)
+
+> spec 의 상위 문서인 **PRD**(`docs/prd/business-context.md` · `/mino-prd` 산출물 · 프로젝트당 1개)를 대시보드로 끌어올린다.
+> 업로드 · 전원 댓글 · spec 과의 버전 호환 추적 · Discord 알림 · 버전 diff 5건.
+> **상세 설계와 단계별 세부 체크리스트는 [design/prd-track.md](../design/prd-track.md) §10.** 아래는 단계 요약이다.
+> 근거: `mino-sdd/template/prd-template.md` · `.claude/skills/mino-prd/SKILL.md`
+
+- [x] **P8.0 설계** — [prd-track.md](../design/prd-track.md) 신설 + [data-model.md](../design/data-model.md) `prds` 반영 + [PRD.md](../PRD.md) §4.9
+- [x] **P8.1 업로드 + 검증** — `js/prd-parse.js`(표 헤더 파서·주석 스트립) · `validatePrd` P1–P7 · store `prd.*` · 업로드 모달 재사용 · `(rules)` 개발자 한정
+- [x] **P8.2 버전 이력 + diff** — `versions/{version}` 스냅샷 서브컬렉션 · from/to 임의 비교 · 섹션 변경 요약 · `diffLines` 성능 가드
+- [x] **P8.3 버전 호환** — 호환 등급 계산 · 목록/상세 뱃지 · "연결된 스펙" 표 · `prTemplate` 체크 줄. **표시 전용(차단 없음)**
+- [x] **P8.4 댓글** — `comments` 서브컬렉션(전원·섹션 앵커·소프트 삭제) + `(rules)`. **P5.1 스레드 컴포넌트의 발판**
+- [x] **P8.5 알림** — `(BE)` `notifyOnPrdWrite`(등급별 색·역할 멘션·뒤처진 spec 목록 동봉) · `?prd=` 딥링크
+- [ ] **P8.6 배포·e2e** — rules/Functions 재배포 · 실 `/mino-prd` 산출물 e2e (캐시 버스팅은 반영됨)
+
+**확정 결정(2026-08-15)**: ① **PRD 의 PR 자동 생성은 하지 않는다**(커밋 경로가 `/mino-prd`+평상시 PR 로 이미 존재 — 두 번째 경로는 SoT 를 가른다) · ② **업로드 권한은 개발자 한정**(댓글은 전원이므로 요구사항 충족).
+
+의존: `P8.1 → {P8.2 ∥ P8.3 ∥ P8.4} → P8.5 → P8.6`. 가운데 셋은 서로 독립이라 병렬 가능.
+
+**검증(2026-08-15)**: 파서/검증/호환/diff 하니스 48건 · mock store 하니스 32건 · headless Chrome e2e 5스텝(문서 21 · 버전diff 17 · 연결된스펙 13 · 디자이너권한 13 · 업로드 27) **전부 통과**. 빈 `prd-template.md` 원본은 P5 로 차단되고, 템플릿 주석 속 예시(`[SCR-00X]` 등)는 주석 스트립으로 오탐되지 않음을 회귀 케이스로 고정.
+
 ## P3 · 보안 규칙 강제 — 완료 (2026-07-06)
 - [x] `firestore.rules` 실 강제: 역할별 전이 허용목록(`devTransitionOk`/`desTransitionOk`) · 필드 잠금(prNumber/prUrl) · `spec_in_review` read-only · 위조 차단(`pr_open`/`merged`/`pr_closed`는 Functions 전용)
 - [x] 자동 버저닝: 대시보드가 `versionLog` 소유 → 전이 이벤트에서 bump(init/patch/minor/major/graduate) → `## 변경 이력` 표 자동 주입(specBody·PR 커밋 미러)
@@ -152,6 +173,7 @@
 | **P4** 구현 추적 | [v2/impl-tracking.md](../v2/impl-tracking.md) | `merged` 이후 실제 안드로이드 구현(이슈→할당→PR→머지)을 병렬 트랙으로 추적. 조인 키=GitHub 이슈 번호 | 설계 확정·미착수 |
 | **P5.1** 논의 스레드 | [v2/discussion.md](../v2/discussion.md) | 승인 전 자유 논의 스레드 + `reviews[]`→서브컬렉션 전환 + 활동 타임라인 | 설계 확정·미착수 |
 | **P5.2** 알림 | [v2/notifications.md](../v2/notifications/notifications.md) | 상태 전이·리뷰·논의를 Discord로 알림. 현 구조(`reviews[]` 배열)에선 feature 트리거 1개가 상태전이+리뷰를 커버 | **1차 완료(2026-07-08, 실알림 검증됨)** — `functions/notify.js` + 역할 실멘션 + `?feature=` 딥링크. 잔여: discussion 알림·"내 멘션"칩(P5.1 후), 개인 discordId 멘션(Tier 2) |
+| **P8** PRD 트랙 | [design/prd-track.md](../design/prd-track.md) | spec 의 **상위 문서** PRD 를 대시보드로. 업로드·전원 댓글·spec 버전 호환 추적·Discord 알림·버전 diff | **코드 완료(2026-08-15)** · 배포/실 e2e 대기 |
 
 ## 의존 / 비고
 - 생성 스킬·검수 에이전트 정의는 **Mino-Android 레포 `.claude/` 소관** ([mino_android.md]) — 본 레포는 사용법 안내 + 산출물 업로드만.
