@@ -25,6 +25,12 @@ const DASHBOARD_URL = 'https://mash-up-kr.github.io/mino-android-spec-center/';
 // 역할 설정에서 "누구나 이 역할을 @mention할 수 있음" 필요.
 const ROLE_ANDROID = '1511671340225007736'; // [민호야잘하자] Android (개발자)
 const ROLE_DESIGN = '1511671633654317076'; // [민호야잘하자] Design (디자이너)
+// PRD 전용 추가 대상 — PRD 는 제품 전체 문서라 Android 팀만의 것이 아니다.
+// spec 파이프라인 알림(컨펌요청·승인·반려·무효화·머지)은 MASC 가 안드로이드 spec 만
+// 다루므로 아래 두 역할을 태그하지 않는다. PRD 개정에만 붙는다.
+const ROLE_IOS = '1511671488464425011';    // [민호야잘하자] iOS
+const ROLE_NODE = '1511671713602076693';   // [민호야잘하자] Node
+const PRD_EXTRA_ROLES = [ROLE_IOS, ROLE_NODE];
 
 // Discord embed 색 (대시보드 상태 뱃지 색과 톤 맞춤)
 const COLORS = {
@@ -143,9 +149,12 @@ exports.notifyOnPrdWrite = onDocumentWritten(
     const title = after.title || event.params.id;
     // MAJOR/MINOR 개정은 하위 spec 이 뒤처진다 → 재실행 대상을 추려 함께 알린다.
     const stale = (level === 'major' || level === 'minor') ? await staleSpecs(cur) : [];
-    const roles = level === 'major' ? [ROLE_ANDROID, ROLE_DESIGN]
-      : level === 'init' ? [ROLE_ANDROID, ROLE_DESIGN]
-        : level === 'minor' ? [ROLE_ANDROID] : [];
+    // 등록·MAJOR·MINOR 는 **4개 역할 전부** 태그한다 — PRD 는 제품 전체 문서라
+    // 범위가 바뀌면(신설이든 확장이든) 모든 플랫폼과 디자인이 알아야 한다.
+    // PATCH·본문 갱신만 무멘션 — 표현 수준 변경까지 울리면 정작 MAJOR 를 놓친다.
+    const roles = ['init', 'major', 'minor'].includes(level)
+      ? [ROLE_ANDROID, ROLE_DESIGN, ...PRD_EXTRA_ROLES]
+      : [];
 
     const head = level === 'init' ? `📘 PRD 등록: ${title} ${cur}`
       : level === 'same' ? `📘 PRD 본문 갱신: ${title} ${cur}`

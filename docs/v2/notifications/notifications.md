@@ -69,6 +69,7 @@ C3는 **도달(reach)** 을 연다. C1(논의)과 붙어야 "팀이 상주하지
 - **Incoming Webhook**(채널 1개)으로 `embeds` POST. 제목 = feature 제목 + 상태 뱃지 색, 설명 = 문구, 필드 = 버전·담당·링크.
 - **딥링크:** 대시보드에 `?feature={id}` 진입 파라미터(소규모 FE 추가)를 붙여 알림에서 해당 feature로 바로 이동. 없으면 대시보드 루트로 폴백.
 - **대상 표현(2026-07-08 격상):** 공용 채널 + **역할 실멘션** `<@&roleId>` — 컨펌요청=Design 역할, 승인/반려/무효화=Android 역할, 머지=둘 다. 멘션은 embed 안에서는 핑이 안 울리므로 **content 필드**에 넣고 `allowed_mentions.roles`로 한정. 역할 설정 "누구나 @mention 허용" 필요. 개인 `<@id>` 멘션(작성자 본인 핑)은 `users.discordId` 매핑 후 Tier 2 유지.
+- **PRD 알림 대상 확장(2026-08-15)**: P8 의 `notifyOnPrdWrite` 는 **iOS(`1511671488464425011`)·Node(`1511671713602076693`) 역할을 추가로 태그**한다 — PRD 는 제품 전체 문서이기 때문. spec 파이프라인 알림은 안드로이드 spec 전용이므로 Android/Design 그대로다. 상세는 [prd-track.md](../../design/prd-track.md) §6.
 
 ## 4b. 상황별 알림 UI 미리보기
 
