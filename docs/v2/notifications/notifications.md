@@ -57,7 +57,7 @@ C3는 **도달(reach)** 을 연다. C1(논의)과 붙어야 "팀이 상주하지
 | 컨펌 요청 (`→ spec_in_review`) | feature | 디자이너 | "🔍 리뷰 요청: {title} v{ver}" |
 | 승인 (`approved`) | review | spec 작성자 | "✅ 승인됨: {title}" |
 | 반려 (`changes_requested`) | review | spec 작성자 | "🔁 반려: {title} — {코멘트 n건 요약}" |
-| 무효화/드리프트 (`→ spec_draft` from committed) | feature | spec 작성자 | "⚠️ 무효화: {title} — 재작업 필요" |
+| 무효화/드리프트 (`→ spec_draft` from committed) | feature | spec 작성자 | "🔄 승인 해제: {title} — 수정본 재컨펌 필요" |
 | 머지 (`→ merged`) | feature | 작성자·관련자 | "🎉 문서 확정(merged): {title} v1.0.0" |
 | 새 논의·멘션 | discussion | 멘션·작성자 | "💬 {author}: {본문 앞부분}" |
 

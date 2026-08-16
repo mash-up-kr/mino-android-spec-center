@@ -205,7 +205,8 @@
       <table class="legend-table"><tbody>${rows}</tbody></table>
       <div class="legend-note">
         <b>게이트</b> · spec <b>승인(spec_approved)</b> 전에는 PR 생성 불가.
-        승인 후 spec을 수정하면 <b>무효화</b> — 작성중으로 복귀하고 열린 PR은 자동 종료됩니다.
+        승인 후 spec을 수정하면 <b>승인이 해제</b>됩니다 — 수정본은 저장되고 상태만 작성중으로 돌아가며,
+        열린 PR은 자동 종료됩니다.
         spec PR은 <code>develop</code>이 아니라 이슈의 <b>base 브랜치</b>(<code>…/base</code>)를 타겟합니다.
       </div>`;
   }
@@ -248,7 +249,7 @@
         `<b>반려 반영 → 재요청</b> — 반려(<code>spec_changes_requested</code>) 시 로컬에서 <code>/mino-spec</code>으로 개정(버전 bump는 스킬이 판정) → <code>spec 수정</code>으로 재업로드 후 <code>컨펌 요청</code>`,
         `<b>PR 생성</b> — 승인(<code>spec_approved</code>)되면 <code>PR 생성</code> → <code>&lt;prefix&gt;/&lt;이슈번호&gt;-&lt;slug&gt;/spec</code> 브랜치에 <code>docs/specs/{slug}/spec.md</code> + <code>docs/specs/{slug}/quality/spec-checklist.md</code> 커밋 → <b>base 브랜치로 PR</b> → <code>pr_open</code>`,
         `<b>이후 단계</b> — 머지되면 같은 base 브랜치에서 <code>/mino-plan</code>·<code>/mino-task</code>를 진행합니다. plan은 대시보드 검토 대상이 아닙니다`,
-        `<b>무효화</b> — 승인 이후 <code>spec 수정</code> 시 자동으로 <code>spec_draft</code> 복귀 + 열린 PR close`,
+        `<b>승인 해제</b> — 승인 이후 <code>spec 수정</code> 시 수정본은 저장되고 상태만 <code>spec_draft</code> 복귀 + 열린 PR close (재컨펌 필요)`,
       ],
       note: `상세 패널의 <b>버전 스냅샷</b>에서 버전별 메모를 확인·편집하고, 재검토 시 "지난 검토 이후 변경분" diff를 열 수 있습니다. 버전 값 자체는 <code>/mino-spec</code>이 소유합니다.`,
     },
@@ -262,7 +263,7 @@
         `<b>반려</b> — <code>spec_changes_requested</code>로 전환. <b>코멘트가 1개 이상</b> 있어야 반려 가능(무엇을 고칠지 없이 반려 불가)`,
         `<b>보충 코멘트</b> — 이미 반려된 스펙에 상태 변경 없이 코멘트만 더할 때 <code>💬 코멘트 추가</code> 사용`,
       ],
-      note: `검토 중(<code>spec_in_review</code>)에는 개발자가 spec을 수정할 수 없습니다. 개발자가 승인 이후 spec을 수정하면 자동 무효화되어 다시 검토 대기로 돌아올 수 있습니다.`,
+      note: `검토 중(<code>spec_in_review</code>)에는 개발자가 spec을 수정할 수 없습니다. 개발자가 승인 이후 spec을 수정하면 승인이 자동 해제되어 다시 검토 대기로 돌아올 수 있습니다.`,
     },
   };
 
@@ -1319,7 +1320,11 @@
     if (!r.ok) return uploadMsg(r.error || '저장 실패');
     closeModal('upload-modal');
     if (r.invalidated) {
-      alert('승인된 spec을 수정해 무효화되었습니다 → 작성중으로 복귀하고 열린 PR은 종료됩니다.'
+      // "무효화"라고만 쓰면 무효가 된 게 방금 올린 수정본인지 기존 승인인지 모호해
+      // 업로드가 씹힌 것으로 읽힌다. 저장 성공을 먼저, 해제 대상(승인)을 명시.
+      alert('수정 내용이 저장됐습니다.\n\n'
+        + '승인 이후 본문이 바뀌어 기존 승인이 해제됩니다 → 상태는 작성중으로, 열려 있던 PR은 자동 종료됩니다.\n'
+        + '[컨펌 요청]을 눌러 수정본으로 다시 검수를 받으세요.'
         + (r.versionStale ? '\n\n⚠️ 버전이 그대로입니다. 로컬 /mino-spec 개정으로 버전을 올린 뒤 다시 올리세요.' : ''));
     }
     select(r.feature.featureId); renderAll();

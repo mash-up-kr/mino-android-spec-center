@@ -37,7 +37,7 @@ const COLORS = {
   review: 0xf59e0b,   // amber — 검토 요청
   approved: 0x22c55e, // green — 승인
   rejected: 0xef4444, // red — 반려
-  invalid: 0xf97316,  // orange — 무효화
+  invalid: 0xf97316,  // orange — 무효화(UI 표기: 승인 해제)
   merged: 0x8b5cf6,   // purple — 머지(확정)
 };
 
@@ -118,7 +118,9 @@ function buildMessage(id, before, after) {
     };
   }
   if (after.status === 'spec_draft' && COMMITTED.includes(before.status)) {
-    return { title: `⚠️ 무효화: ${t} — 재작업 필요`, roles: [ROLE_ANDROID], color: COLORS.invalid };
+    // 표기는 "승인 해제" — 무효가 된 게 방금 올린 수정본이 아니라 기존 승인임을 분명히 한다.
+    // ⚠️ + "재작업 필요" 는 업로드가 반려·무시된 것으로 읽혀 🔄 로 바꿨다(전이 사실만 전달).
+    return { title: `🔄 승인 해제: ${t} — 수정본 재컨펌 필요`, roles: [ROLE_ANDROID], color: COLORS.invalid };
   }
   if (after.status === 'merged') {
     return {

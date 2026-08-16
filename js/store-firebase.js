@@ -306,8 +306,8 @@
       if (closePr) {
         try {
           await firebase.functions().httpsCallable('closeSpecPR')(
-            { featureId: id, prNumber: closePr, reason: 'spec 수정으로 무효화' });
-        } catch (e) { console.error('closeSpecPR 실패(무효화는 진행됨):', e.message); }
+            { featureId: id, prNumber: closePr, reason: 'spec 이 수정되어 기존 승인이 해제되었습니다.' });
+        } catch (e) { console.error('closeSpecPR 실패(승인 해제는 진행됨):', e.message); }
       }
       return { ok: true, feature: { featureId: id }, invalidated, versionStale };
     },

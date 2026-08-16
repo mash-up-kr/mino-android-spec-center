@@ -233,10 +233,10 @@ exports.closeSpecPR = onCall(async (request) => {
       throw new HttpsError('failed-precondition', 'PR 브랜치가 이 spec 과 일치하지 않습니다.');
     }
     if (pr.data.state === 'closed') return { closed: true, already: true };
-    const msg = reason || 'spec 이 수정되어 무효화되었습니다.';
+    const msg = reason || 'spec 이 수정되어 기존 승인이 해제되었습니다.';
     await octokit.issues.createComment({
       owner: OWNER, repo: REPO, issue_number: prNumber,
-      body: `⚠️ ${msg} 새 버전으로 다시 PR 이 생성됩니다.`,
+      body: `🔄 ${msg} 재컨펌 후 새 PR 이 생성됩니다.`,
     }).catch(() => {});
     await octokit.pulls.update({ owner: OWNER, repo: REPO, pull_number: prNumber, state: 'closed' });
     return { closed: true, prNumber };
