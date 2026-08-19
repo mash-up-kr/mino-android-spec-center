@@ -188,6 +188,85 @@
     '- 프리로드 개수는 기본값 2개를 사용한다',
   ].join('\n');
 
+  // 기능 스펙 데모 (P9.1) — **Figma 근거가 없는** spec. 화면이 없으니 디자이너가 볼 것도 없어
+  // `⚡ 무검토 승인` 대상이고, 목록의 `기능 스펙` 칩으로 이런 문서만 따로 추릴 수 있다.
+  const FEED_LOG_SPEC = [
+    '# 스펙 명세서: 지금 - 피드 노출 로그',
+    '',
+    '**대상 스펙 경로**: `docs/specs/now-feed-log`',
+    '',
+    '**기준 PRD 버전**: 1.1.0',
+    '',
+    '**최초 작성일**: 2026-08-18',
+    '',
+    '**최종 수정일**: 2026-08-18',
+    '',
+    '**상태**: CREATED',
+    '',
+    '**버전**: 1.0.0',
+    '',
+    '**입력**: 사용자 설명: "지금 탭 피드 항목의 노출/클릭을 로그로 남긴다 (화면 변경 없음)"',
+    '',
+    '---',
+    '',
+    '## 1. 유저 시나리오 (User Scenarios) *(필수)*',
+    '',
+    '### 유저 플로우 1 - 노출 로그 적재',
+    '사용자에게 보이는 변화 없이, 피드 항목의 노출과 클릭을 분석 이벤트로 남긴다.',
+    '',
+    '**진입 조건**: "지금" 탭 피드가 화면에 표시된 상태',
+    '',
+    '1. 항목이 화면에 50% 이상 1초 이상 노출 → `feed_item_impression` 이벤트를 적재한다',
+    '2. 항목 탭 → `feed_item_click` 이벤트를 적재하고 기존 진입 동작을 그대로 수행한다',
+    '3. 앱이 백그라운드로 전환 → 적재 대기 중인 이벤트를 즉시 전송한다',
+    '',
+    '**완료 조건**: 노출·클릭 이벤트가 중복 없이 수집 서버에 도달한다',
+    '',
+    '**테스트 시나리오**',
+    '',
+    '| ID | 시나리오 | Given | When | Then | 관련 FR |',
+    '|---|---|---|---|---|---|',
+    '| TS-001 | 노출 1회 | 항목 A가 목록에 있음 | 화면에 1초 노출 | `feed_item_impression` 1건 적재 | FR-001 |',
+    '| TS-002 | 중복 억제 | 항목 A 노출 로그 적재됨 | 스크롤로 재노출 | 같은 세션에서는 추가 적재하지 않는다 | FR-002 |',
+    '| TS-003 | 클릭 로그 | 항목 A가 표시됨 | 항목 A 탭 | `feed_item_click` 적재 + 기존 진입 동작 유지 | FR-003 |',
+    '',
+    '**엣지 케이스**',
+    '',
+    '| ID | 상황 | 처리 | 관련 FR |',
+    '|---|---|---|---|',
+    '| EC-001 | 전송 실패 | 로컬 큐에 보관하고 다음 실행에서 재전송한다 | FR-004 |',
+    '| EC-002 | 큐 200건 초과 | 오래된 항목부터 버린다 (UI 영향 없음) | FR-004 |',
+    '',
+    '## 2. 요구사항 (Requirements) *(필수)*',
+    '',
+    '### 2.1 기능적 요구사항 (Functional Requirements)',
+    '',
+    '- **FR-001**: 시스템은 반드시 피드 항목이 50% 이상 1초 이상 노출되면 노출 이벤트를 적재한다.',
+    '- **FR-002**: 시스템은 반드시 같은 세션에서 같은 항목의 노출 이벤트를 1회만 적재한다.',
+    '- **FR-003**: 시스템은 반드시 피드 항목 클릭 시 클릭 이벤트를 적재하고 기존 진입 동작을 유지한다.',
+    '- **FR-004**: 시스템은 반드시 전송 실패한 이벤트를 로컬 큐에 보관하고 재전송한다.',
+    '',
+    '### 2.2 핵심 UX 규칙 (Core UX Rules)',
+    '',
+    '- **UX-001**: 로그 적재는 화면 표시·스크롤 성능에 영향을 주지 않는다 (사용자에게 보이는 변화 없음).',
+    '',
+    '## 3. 범위 (Scope) *(필수)*',
+    '',
+    '### 3.1 측정 가능한 성과 (Measurable Performance)',
+    '',
+    '- **SC-001**: 노출 이벤트 유실률이 1% 미만이다',
+    '- **SC-002**: 로그 적재로 인한 스크롤 프레임 드랍이 0건이다',
+    '',
+    '### 3.2 비목표 항목 (Out of Scope)',
+    '',
+    '- 수집된 로그의 대시보드·리포팅은 별도 스펙이 정의한다',
+    '- 화면·레이아웃 변경은 이 스펙의 범위가 아니다 (디자인 산출물 없음)',
+    '',
+    '## 4. 가정 (Assumptions)',
+    '',
+    '- 분석 SDK 초기화는 앱 시작 시 이미 완료돼 있다',
+  ].join('\n');
+
   // 데모용 품질 체크리스트 (mino-sdd/template/spec-checklist-template.md 구조).
   // `/mino-spec` 이 spec.md 와 함께 산출하는 두 번째 파일 — 대시보드는 검수 대상이 아닌 참고 자료로 보관한다.
   const checklist = (name, date, version, failed) => [
@@ -237,6 +316,7 @@
 
   const OPENCHAT_CHECKLIST = checklist('지금 - 오픈채팅 목록', '2026-06-18', '1.0.0', false);
   const SHORTS_CHECKLIST = checklist('지금 - 쇼츠', '2026-06-20', '1.0.0', true);
+  const FEED_LOG_CHECKLIST = checklist('지금 - 피드 노출 로그', '2026-08-18', '1.0.0', false);
 
   // ---------- PRD (P8) — spec 의 상위 문서. `mino-sdd/template/prd-template.md` 골격 ----------
   // 헤더가 `**키**: 값` 줄이 아니라 **표**이고, 섹션 제목이 H1 이라는 점이 spec 과 다르다.
@@ -383,6 +463,7 @@
       { name: 'feature/130-base-branch-workflow/base', issue: 130, slug: 'base-branch-workflow' },
       { name: 'feature/141-now-openchat/base', issue: 141, slug: 'now-openchat' },
       { name: 'feature/142-now-shorts/base', issue: 142, slug: 'now-shorts' },
+      { name: 'feature/151-now-feed-log/base', issue: 151, slug: 'now-feed-log' },
     ],
     // mock 사용자 (실연결 시 Firebase Auth + users/{uid})
     users: [
@@ -438,6 +519,31 @@
         versionLog: [{
           version: '1.0.0', level: 'init', at: '2026-06-20', reason: '',
           body: SHORTS_SPEC, checklistBody: SHORTS_CHECKLIST,
+        }],
+      },
+      {
+        // 기능 스펙 (P9.1) — Figma 근거 없음 + 체크리스트 PASS + `[TBD]` 0건 이라
+        // 업로드 직후 `⚡ 무검토 승인` → `PR 생성` 까지 디자이너를 거치지 않고 갈 수 있다.
+        featureId: 'now-feed-log',
+        slug: 'now-feed-log',
+        title: '지금 - 피드 노출 로그',
+        status: 'spec_draft',
+        specVersion: '1.0.0',
+        specStatus: 'CREATED',
+        prdVersion: '1.1.0',
+        baseBranch: 'feature/151-now-feed-log/base',
+        figmaSources: [],
+        prNumber: null,
+        prUrl: null,
+        specBody: FEED_LOG_SPEC,
+        checklistBody: FEED_LOG_CHECKLIST,
+        checklistStatus: 'PASS',
+        checklistTargetVersion: '1.0.0',
+        createdBy: 'eunseok',
+        reviews: [],
+        versionLog: [{
+          version: '1.0.0', level: 'init', at: '2026-08-18', reason: '',
+          body: FEED_LOG_SPEC, checklistBody: FEED_LOG_CHECKLIST,
         }],
       },
     ],

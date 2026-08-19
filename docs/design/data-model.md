@@ -21,11 +21,13 @@ features/{featureId}
   │    ├─ body: string         # 그 버전 시점의 spec 본문 → 재검토 diff 용
   │    └─ checklistBody: string  # 같은 시점의 체크리스트 본문 → diff 모달의 문서 탭
   ├─ figmaSources: string[]    # §1 `**Figma**:` 줄에서 자동 수집한 노드 URL
+  │                             #   ↳ 비어 있으면 '기능 스펙'으로 파생(P9.1 목록 탭·상세 배지). 전용 필드 없음
   ├─ prNumber: number | null   # Functions(Admin)만 설정 — 클라이언트는 그대로/null만 허용
   ├─ prUrl: string | null
   ├─ specBody: string          # spec.md 본문 (SoT) — 업로드된 원문 그대로. 대시보드가 가공하지 않는다
   ├─ checklistBody: string     # quality/spec-checklist.md 본문 (SoT) — 업로드 필수, 검수 대상 아님
   ├─ checklistStatus: string   # 체크리스트 헤더 `**상태**` (PASS | FAILED | DRAFT)
+  │                             #   ↳ 자체·무검토 승인(P9.1)의 서버측 가드 — rules 가 `PASS` 를 요구한다
   ├─ checklistTargetVersion: string  # 체크리스트 헤더 `**대상 스펙**` 의 spec 버전 (불일치 시 경고)
   ├─ reviews: [{ decision, comments, reviewerUid, reviewedAt }]  # 컨펌 이력 (MVP: 배열 필드, 서브컬렉션 전환은 후속)
   │    ├─ decision: 'approved' | 'changes_requested' | 'comment' | 'self_approved'

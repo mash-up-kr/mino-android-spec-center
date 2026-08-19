@@ -256,6 +256,11 @@ table.feature-table { width: 100%; border-collapse: collapse; }
 .legend-block { margin-bottom: 24px; }
 .legend-block > h3 { font-size: 13px; margin: 0 0 4px; }
 .legend-block > .desc { font-size: 12px; color: var(--muted); margin: 0 0 12px; }
+.legend-h {
+  font-size: 13px; font-weight: 700; color: var(--text); margin: 22px 0 6px;
+  padding-top: 14px; border-top: 1px solid var(--border);
+}
+.legend-h:first-child { margin-top: 0; padding-top: 0; border-top: none; }
 .legend-table { width: 100%; border-collapse: collapse; }
 .legend-table td { padding: 9px 8px; border-bottom: 1px solid var(--border); font-size: 13px; vertical-align: top; }
 .legend-table td:first-child { width: 96px; white-space: nowrap; }
@@ -477,7 +482,25 @@ table.feature-table { width: 100%; border-collapse: collapse; }
 .step.active .dot { background: var(--accent); border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-soft); }
 .step.active .slabel { color: var(--accent); font-weight: 700; }
 .step.done .dot { background: var(--green); border-color: var(--green); }
+/* 무검토 승인 — 거치지 않은 단계. done(초록)과 구분되게 점선 테두리 + 흐린 라벨 */
+.step.skipped .dot { background: transparent; border-style: dashed; border-color: var(--muted); }
+.step.skipped .slabel { color: var(--muted); text-decoration: line-through; }
 .sline { flex: 1; height: 2px; background: var(--border); min-width: 10px; margin-top: -14px; }
+
+/* 디자인/기능 스펙 탭 — 배타 축(모든 스펙이 정확히 하나) */
+.kind-tabs { display: flex; gap: 2px; padding: 0 14px; border-bottom: 1px solid var(--border); }
+.kind-tab {
+  appearance: none; background: none; border: none; cursor: pointer;
+  padding: 9px 12px 8px; margin-bottom: -1px; font-size: 13px; font-weight: 600;
+  color: var(--muted); border-bottom: 2px solid transparent; display: flex; align-items: center; gap: 6px;
+}
+.kind-tab:hover { color: var(--text); }
+.kind-tab.active { color: var(--accent); border-bottom-color: var(--accent); }
+.kind-tab .tab-count {
+  font-size: 11px; font-weight: 700; color: var(--muted);
+  background: var(--gray-bg); border-radius: 999px; padding: 1px 7px;
+}
+.kind-tab.active .tab-count { color: var(--accent); background: var(--accent-soft); }
 
 /* Dropzone & assets */
 .dropzone {

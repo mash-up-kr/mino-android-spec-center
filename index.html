@@ -4,7 +4,7 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>MASC · Mino Android Spec Center</title>
-  <link rel="stylesheet" href="styles.css?v=18" />
+  <link rel="stylesheet" href="styles.css?v=21" />
 </head>
 <body>
   <!-- 부팅 에러를 빈 화면 대신 표면화 -->
@@ -45,7 +45,7 @@
         <button class="btn-ghost prd-chip" id="btn-prd">📘 PRD</button>
         <button class="btn-ghost" id="btn-roleguide">역할별 사용법</button>
         <button class="btn-ghost" id="btn-skill">스킬 안내</button>
-        <button class="btn-ghost" id="btn-legend">상태 안내</button>
+        <button class="btn-ghost" id="btn-legend">상태 · 배지 안내</button>
         <button class="btn-ghost" id="btn-reset">필터 초기화</button>
         <div class="user-chip" id="user-chip"></div>
         <button class="btn-ghost" id="btn-logout">로그아웃</button>
@@ -77,6 +77,7 @@
           <input class="search" id="search" type="text" placeholder="Feature 검색 (제목 / slug)" />
           <button class="btn-primary" id="btn-new">+ 새 스펙 업로드</button>
         </div>
+        <div class="kind-tabs" id="kind-tabs"></div>
         <div id="center-body"></div>
       </main>
 
@@ -88,9 +89,9 @@
 
     <!-- 상태 안내 모달 -->
     <div id="legend-modal" class="modal-overlay hidden">
-      <div class="modal-card">
+      <div class="modal-card modal-wide">
         <div class="modal-head">
-          <h2>파이프라인 상태 안내</h2>
+          <h2>상태 · 배지 안내</h2>
           <button class="modal-close" data-close="legend-modal" aria-label="닫기">×</button>
         </div>
         <div class="modal-body" id="legend-body"></div>
@@ -256,13 +257,13 @@
   <script src="https://www.gstatic.com/firebasejs/10.12.5/firebase-functions-compat.js"></script>
 
   <script src="js/firebase-config.js?v=7"></script>
-  <script src="data/seed.js?v=7"></script>
+  <script src="data/seed.js?v=8"></script>
   <script src="js/spec-parse.js?v=6"></script>
   <script src="js/prd-parse.js?v=1"></script>
   <script src="js/validate.js?v=7"></script>
-  <script src="js/version.js?v=6"></script>
-  <script src="js/store-firebase.js?v=22"></script>
-  <script src="js/store.js?v=19"></script>
-  <script src="js/app.js?v=27"></script>
+  <script src="js/version.js?v=7"></script>
+  <script src="js/store-firebase.js?v=23"></script>
+  <script src="js/store.js?v=20"></script>
+  <script src="js/app.js?v=32"></script>
 </body>
 </html>

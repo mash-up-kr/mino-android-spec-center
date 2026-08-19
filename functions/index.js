@@ -280,27 +280,37 @@ function prdAlignLine(f, prdVersion) {
   if (!prdVersion) return null;                       // PRD 미등록이면 줄 자체를 생략
   const base = f.prdVersion || '없음';
   const level = compatLevel(f.prdVersion, prdVersion);
-  if (level === 'same' || level === 'patch') return `- [x] 기준 PRD 최신 (PRD \`${prdVersion}\`)`;
+  if (level === 'same') return `- [x] 기준 PRD 최신 (PRD \`${prdVersion}\`)`;
+  if (level === 'patch') return `- [x] 기준 PRD — 표현·링크 수준 변경만, 스펙 영향 없음 (PRD \`${prdVersion}\`)`;
   if (level === 'ahead') {
-    return `- [ ] PRD 미업로드 — spec 기준 \`${base}\` / 등록된 PRD \`${prdVersion}\` (최신 PRD를 대시보드에 올려주세요)`;
+    return `- [ ] **PRD 등록 필요** — 이 스펙은 PRD \`${base}\` 를 보고 썼는데 대시보드에는 \`${prdVersion}\` 까지만 등록돼 있습니다`;
   }
-  if (level === 'none') return `- [ ] 기준 PRD 미연결 — spec 헤더 \`**기준 PRD 버전**\` 확인 필요`;
-  const what = level === 'major'
-    ? 'MVP 경계·용어가 바뀌었습니다 — `/mino-spec` 재실행 필요'
-    : '항목이 추가됐습니다 — 주제가 겹치면 재실행 검토';
-  return `- [ ] 기준 PRD 뒤처짐 (${level.toUpperCase()}) — spec 기준 \`${base}\` / 현재 PRD \`${prdVersion}\` · ${what}`;
+  if (level === 'none') return `- [ ] **기준 PRD 없음** — spec 헤더 \`**기준 PRD 버전**\` 확인 필요`;
+  if (level === 'major') {
+    return `- [ ] **스펙 재작성 필요** — PRD 가 \`${prdVersion}\` 로 크게 바뀌었습니다(이 스펙 기준 \`${base}\`) · \`/mino-spec\` 재실행`;
+  }
+  return `- [ ] **스펙 점검 필요** — PRD \`${prdVersion}\` 에 항목이 추가됐습니다(이 스펙 기준 \`${base}\`) · 주제가 겹치면 \`/mino-spec\` 재실행`;
 }
 
-// 얼라인 체크리스트 첫 줄은 승인 경로에 따라 갈린다. 상태는 둘 다 `spec_approved` 라
-// 구분은 `reviews[]` 의 마지막 승인 항목에만 남는다. 개발자 자체 승인(P9)은 디자이너가
-// 보지 않은 승인이므로 **미체크 + 사유**로 남겨 CODEOWNERS 리뷰어가 알아채게 한다.
+// 얼라인 체크리스트 첫 줄은 승인 경로에 따라 셋으로 갈린다. 상태는 전부 `spec_approved` 라
+// 구분은 `reviews[]` 에만 남는다 — 마지막 승인 항목이 `self_approved` 인지, 그리고 그 **앞에**
+// 디자이너 `approved` 가 있었는지(유지 승인 vs 무검토 승인). 개발자 승인은 디자이너가 보지 않은
+// 승인이므로 **미체크 + 사유**로 남겨 CODEOWNERS 리뷰어가 알아채게 한다.
 function approvalLine(f) {
-  const list = (Array.isArray(f.reviews) ? f.reviews : [])
-    .filter((r) => r && (r.decision === 'approved' || r.decision === 'self_approved'));
-  const last = list.length ? list[list.length - 1] : null;
+  const rs = Array.isArray(f.reviews) ? f.reviews : [];
+  let idx = -1;
+  for (let i = rs.length - 1; i >= 0; i--) {
+    const d = rs[i] && rs[i].decision;
+    if (d === 'approved' || d === 'self_approved') { idx = i; break; }
+  }
+  const last = idx >= 0 ? rs[idx] : null;
   if (!last || last.decision !== 'self_approved') return '- [x] spec 컨펌됨 (디자이너 승인)';
   const why = String((((last.comments || [])[0] || {}).body) || '').replace(/\s+/g, ' ').trim();
-  return `- [ ] spec 컨펌 — **개발자 자체 승인**(디자이너 컨펌 생략)${why ? ` · 사유: ${why}` : ''}`;
+  const seen = rs.slice(0, idx).some((r) => r && r.decision === 'approved');
+  const head = seen
+    ? '- [ ] spec 컨펌 — **개발자 자체 승인**(디자이너 컨펌 생략)'
+    : '- [ ] spec 컨펌 **없음** — **개발자 무검토 승인**(디자이너 검토 이력 없음)';
+  return `${head}${why ? ` · 사유: ${why}` : ''}`;
 }
 
 function prTemplate(f, baseBranch, headBranch, prdVersion) {

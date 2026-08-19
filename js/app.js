@@ -57,7 +57,7 @@
     },
   ];
 
-  const state = { status: 'all', quick: new Set(), search: '', selectedId: null };
+  const state = { status: 'all', kind: 'all', quick: new Set(), search: '', selectedId: null };
   // Discord 알림 딥링크 — ?feature={id}(notifications.md §4) · ?prd=1(P8 알림)
   const qs = new URLSearchParams(location.search);
   let pendingDeepLink = qs.get('feature');
@@ -76,26 +76,63 @@
     return n ? badge(`TBD ${n}건`, 'amber', `미해소 [TBD] ${n}건 — 검수에서 확정이 필요한 항목입니다`) : '';
   };
 
-  // ---------- 자체 승인 (P9) ----------
-  // 승인 경로가 둘(디자이너 컨펌 · 개발자 자체 승인)이지만 상태는 같은 `spec_approved` 다.
-  // 구분은 `reviews[]` 의 decision 으로만 남으므로, 디자이너가 "내가 안 본 승인"을
-  // 목록에서 훑을 수 있도록 배지로 끌어올린다.
+  // ---------- 자체 승인 · 무검토 승인 (P9 · P9.1) ----------
+  // 승인 경로는 셋인데 상태는 모두 같은 `spec_approved` 다 — 전용 상태를 만들지 않는 대신
+  // `reviews[]` 에서 **파생**한다. 갈림길은 "그 승인 항목보다 앞에 디자이너 `approved` 가 있었나":
+  //   designer → 디자이너 컨펌 · self → 유지 승인(이미 본 스펙의 재승인) · noreview → 무검토 승인
+  // 디자이너가 "내가 안 본 승인"을 목록에서 훑을 수 있도록 배지로 끌어올린다.
   const APPROVAL_DECISIONS = ['approved', 'self_approved'];
   function lastApproval(f) {
     const list = ((f && f.reviews) || []).filter((r) => r && APPROVAL_DECISIONS.includes(r.decision));
     return list.length ? list[list.length - 1] : null;
   }
-  // 버튼 노출 조건 = store.selfApprove 의 가드와 같은 규칙 (①작성중 ②디자이너 승인 이력)
-  const canSelfApprove = (f) => !!f && f.status === 'spec_draft'
-    && ((f.reviews || []).some((r) => r && r.decision === 'approved'));
+  // reviews[i] 앞쪽에 디자이너 승인이 있었는가 (항목별 성격 판정용)
+  const approvedBefore = (rs, i) => rs.slice(0, i).some((p) => p && p.decision === 'approved');
+  // 마지막 승인의 성격: 'designer' | 'self' | 'noreview' | '' (승인 이력 없음)
+  function approvalFlavor(f) {
+    const rs = (f && f.reviews) || [];
+    for (let i = rs.length - 1; i >= 0; i--) {
+      const r = rs[i];
+      if (!r) continue;
+      if (r.decision === 'approved') return 'designer';
+      if (r.decision === 'self_approved') return approvedBefore(rs, i) ? 'self' : 'noreview';
+    }
+    return '';
+  }
+  // 디자이너가 승인한 적 있는가 = 버튼 라벨이 `자체 승인`(유지)인지 `무검토 승인`인지 가른다
+  const approvedByDesigner = (f) => ((f && f.reviews) || []).some((r) => r && r.decision === 'approved');
+  // 검토 단계를 실제로 거친 적이 있는가 — 없으면 스테퍼의 `검토`는 done 이 아니라 skipped 다
+  const reviewedByDesigner = (f) => ((f && f.reviews) || [])
+    .some((r) => r && ['approved', 'changes_requested'].includes(r.decision));
+  // 가드는 store 와 공유한다 (버튼 활성·툴팁이 실제 전이 규칙과 어긋나지 않게)
+  const selfApproveBlock = (f) => (features.selfApproveBlock ? features.selfApproveBlock(f) : null);
   const selfApprovedBadge = (f) => {
     if (!f || !['spec_approved', 'pr_open', 'merged'].includes(f.status)) return '';
-    const a = lastApproval(f);
-    if (!a || a.decision !== 'self_approved') return '';
-    const why = ((a.comments || [])[0] || {}).body || '';
-    return badge('자체 승인', 'amber',
-      `디자이너 컨펌 없이 개발자가 승인했습니다${why ? ` — 사유: ${why}` : ''}`);
+    const flavor = approvalFlavor(f);
+    if (flavor !== 'self' && flavor !== 'noreview') return '';
+    const why = (((lastApproval(f) || {}).comments || [])[0] || {}).body || '';
+    return flavor === 'noreview'
+      ? badge('무검토 승인', 'red',
+        `디자이너 검토 이력이 없는 승인입니다 — 개발자가 검토 불필요로 판단했습니다${why ? ` · 사유: ${why}` : ''}`)
+      : badge('자체 승인', 'amber',
+        `디자이너 컨펌 없이 개발자가 승인했습니다${why ? ` — 사유: ${why}` : ''}`);
   };
+
+  // ---------- 디자인 스펙 / 기능 스펙 (P9.1) ----------
+  // 새 필드를 만들지 않고 **Figma 근거 유무**(`figmaSources`)로 파생한다. 화면 근거가 없는 spec
+  // = 디자이너가 볼 것이 없는 기능 스펙이고, 그게 곧 무검토 승인의 대상이다. 전용 필드를 두면
+  // rules 잠금·승인 해제 연쇄·업로드 UI 가 전부 그 필드를 알아야 하는데 얻는 건 같은 구분뿐이다.
+  const specKind = (f) => (((f && f.figmaSources) || []).length ? 'design' : 'function');
+  const KIND_TABS = [
+    { id: 'all', label: '전체' },
+    { id: 'design', label: '디자인 스펙' },
+    { id: 'function', label: '기능 스펙' },
+  ];
+  // 목록에서는 탭이 문맥을 주므로 행 배지를 달지 않는다(상태·PRD·승인 배지와 겹쳐 시끄러워진다).
+  // 개별 스펙을 볼 때는 문맥이 없으니 상세 헤더에만 남긴다.
+  const kindBadge = (f) => (specKind(f) === 'function'
+    ? badge('기능 스펙', 'gray', 'Figma 근거가 없는 기능 스펙 — 디자이너 검토 없이 진행할 수 있습니다(⚡ 무검토 승인)')
+    : badge('디자인 스펙', 'blue', 'Figma 근거가 있는 스펙 — 디자이너 컨펌 대상입니다'));
 
   // ===================== Auth =====================
   function renderLoginUsers() {
@@ -142,7 +179,7 @@
     const u = auth.currentUser();
     if (FB && u && !u.role) { showOnboarding(); return; } // 첫 로그인 역할 선택
     $('#login').classList.add('hidden'); $('#app').classList.remove('hidden');
-    renderUserChip(); initControls();
+    renderUserChip(); initControls(); applyRoleUi();
     if (!subscribed) { subscribed = true; features.subscribe(() => { if (!$('#app').classList.contains('hidden')) renderAll(); }); }
     renderAll();
   }
@@ -169,7 +206,7 @@
       });
     });
     $('#btn-reset').addEventListener('click', resetFilters);
-    $('#btn-logout').addEventListener('click', () => { auth.logout(); controlsReady = false; showLogin(); });
+    $('#btn-logout').addEventListener('click', () => { auth.logout(); showLogin(); });
     $('#btn-new').addEventListener('click', () => openUpload(null));
 
     renderLegend(); renderSkillGuide();
@@ -183,9 +220,6 @@
     });
     document.querySelectorAll('#roleguide-tabs .role-tab').forEach((tab) =>
       tab.addEventListener('click', () => renderRoleGuide(tab.dataset.role)));
-
-    // 디자이너는 문서 생성 스킬을 쓰지 않으므로 스킬 안내 버튼 숨김
-    $('#btn-skill').style.display = auth.isDeveloper() ? '' : 'none';
 
     document.querySelectorAll('[data-close]').forEach((b) =>
       b.addEventListener('click', () => closeModal(b.dataset.close)));
@@ -204,35 +238,91 @@
     });
     $('#doc-approve').addEventListener('click', approveFromReview);
     $('#doc-reject').addEventListener('click', rejectFromReview);
+  }
 
-    // 디자이너는 spec을 작성/업로드하지 않는다 (PRD 3장: 승인/반려만 관여)
-    $('#btn-new').style.display = auth.isDeveloper() ? '' : 'none';
+  // 역할에 따라 갈리는 UI — 계정을 바꿔 다시 로그인할 때마다 적용한다.
+  // (리스너 배선은 initControls 가 1회만 한다 — 다시 돌리면 퀵필터 토글이 겹쳐 붙는다)
+  function applyRoleUi() {
+    const dev = auth.isDeveloper();
+    $('#btn-skill').style.display = dev ? '' : 'none';   // 디자이너는 문서 생성 스킬을 쓰지 않는다
+    $('#btn-new').style.display = dev ? '' : 'none';     // spec 업로드는 개발자만 (PRD 3장)
   }
   const openModal = (id) => $('#' + id).classList.remove('hidden');
   const closeModal = (id) => $('#' + id).classList.add('hidden');
 
   function resetFilters() {
-    state.status = 'all'; state.quick.clear(); state.search = '';
+    state.status = 'all'; state.kind = 'all'; state.quick.clear(); state.search = '';
     $('#search').value = '';
     document.querySelectorAll('#quick-filters .chip').forEach((c) => c.classList.remove('active'));
     renderAll();
   }
 
+  // 상태 · 배지 안내 — 목록/상세에 뜨는 모든 뱃지의 의미를 한 곳에서 설명한다.
+  // PRD 조치 뱃지는 `prdCompat` 을 **실제로 호출해** 만든다 — 문구·색이 코드와 어긋날 수 없다.
   function renderLegend() {
     const rows = (features.enums().status || []).map((s) =>
       `<tr><td>${statusBadge(s)}</td><td><span class="meaning">${esc(STATUS_DESC[s] || '')}</span></td></tr>`).join('');
+
+    // [spec 기준 PRD, 등록된 PRD] 예시 쌍 — 6개 등급을 모두 만든다
+    const PRD_CASES = [
+      ['1.0.0', '1.0.0'], ['1.0.0', '2.0.0'], ['1.0.0', '1.1.0'],
+      ['1.0.0', '1.0.1'], ['1.1.0', '1.0.0'], ['없음', '1.0.0'],
+    ];
+    const prdRows = PRD_CASES.map(([a, b]) => {
+      const c = V2.prdCompat(a, b);
+      const quiet = ['same', 'patch', 'none'].includes(c.level);
+      return `<tr><td>${badge(c.label, c.color)}</td>
+        <td><span class="meaning">${esc(c.hint)}</span>
+        <div class="feat-sub">예: 스펙 기준 <code>${esc(a)}</code> · 등록된 PRD <code>${esc(b)}</code>${quiet ? ' · <b>목록에서는 표시하지 않음</b>' : ''}</div></td></tr>`;
+    }).join('');
+
+    const approvalRows = [
+      [badge('자체 승인', 'amber'), '개발자가 <b>디자인 영향이 없다고 판단</b>해 컨펌 없이 재승인했습니다(예: PRD 개정 반영). 이미 디자이너 승인을 받은 적 있는 스펙입니다.'],
+      [badge('무검토 승인', 'red'), '<b>디자이너 검토 이력이 한 번도 없는</b> 스펙을 개발자가 검토 불필요로 판단해 승인했습니다. 상세 스테퍼의 <code>검토</code> 단계가 <b>점선(건너뜀)</b>으로 표시됩니다.'],
+    ].map(([b, t]) => `<tr><td>${b}</td><td><span class="meaning">${t}</span></td></tr>`).join('');
+
+    const docRows = [
+      [badge('디자인 스펙', 'blue'), 'spec 본문 §1에 <b>Figma 링크가 있는</b> 스펙 — 디자이너 컨펌 대상입니다.'],
+      [badge('기능 스펙', 'gray'), 'Figma 링크가 <b>없는</b> 스펙 — 화면이 없어 <code>⚡ 무검토 승인</code>으로 컨펌 없이 진행할 수 있습니다.'],
+      [badge('TBD 3건', 'amber'), '본문에 <code>[TBD]</code>가 남아 있습니다 — <b>검수에서 확정해야 할 항목</b>입니다(개수는 예시).'],
+      [badge('체크리스트 PASS', 'green'), '로컬 <code>/mino-spec</code> 품질 자가검증을 통과했습니다. <code>FAILED</code>·<code>DRAFT</code>면 자체·무검토 승인이 <b>막힙니다</b>.'],
+    ].map(([b, t]) => `<tr><td>${b}</td><td><span class="meaning">${t}</span></td></tr>`).join('');
+
     $('#legend-body').innerHTML = `
+      <h3 class="legend-h">1. 파이프라인 상태</h3>
       <p class="desc">docs/specs/{feature} 한 묶음이 단일 status를 가진다. 디자이너는 spec에만 관여.</p>
       <table class="legend-table"><tbody>${rows}</tbody></table>
       <div class="legend-note">
-        <b>게이트</b> · spec <b>승인(spec_approved)</b> 전에는 PR 생성 불가.
+        <b>게이트</b> · spec <b>승인</b> 전에는 PR 생성 불가.
         승인 후 spec을 수정하면 <b>승인이 해제</b>됩니다 — 수정본은 저장되고 상태만 작성중으로 돌아가며,
         열린 PR은 자동 종료됩니다.
-        해제된 뒤 <b>디자인 영향이 없는 변경</b>(예: PRD 개정 반영)이라면 개발자가 <b>⚡ 자체 승인</b>으로
-        컨펌 왕복 없이 되돌릴 수 있습니다 — <b>사유 필수</b>이고, 디자이너가 한 번이라도 승인한 스펙에서만
-        가능하며, 이력·PR 본문·Discord 알림에 <b>자체 승인</b>으로 표시됩니다.
         spec PR은 <code>develop</code>이 아니라 이슈의 <b>base 브랜치</b>(<code>…/base</code>)를 타겟합니다.
-      </div>`;
+      </div>
+
+      <h3 class="legend-h">2. PRD 조치 뱃지 — "그래서 뭘 해야 하나"</h3>
+      <p class="desc">spec 헤더의 <b>기준 PRD 버전</b> ↔ 대시보드에 <b>등록된 PRD 버전</b>을 비교한 결과입니다.
+        문구가 <b>“스펙 …”으로 시작하면 spec 작성자</b>가, <b>“PRD …”면 PRD를 올릴 사람</b>이 움직일 차례입니다.</p>
+      <table class="legend-table"><tbody>${prdRows}</tbody></table>
+      <div class="legend-note">
+        <b>차단하지 않습니다</b> — 표시 전용입니다. 단 <b>스펙 재작성 필요</b>(MAJOR) 상태로 <code>컨펌 요청</code>을 누르면
+        확인을 한 번 받고, <b>스펙 재작성 필요</b>·<b>스펙 점검 필요</b>만 PRD 개정 알림의
+        <b>"확인이 필요한 스펙"</b> 목록에 집계됩니다. 목록 행에는 <b>조치가 필요한 것만</b> 띄우고,
+        상세 패널에는 여섯 가지를 모두 표시합니다.
+      </div>
+
+      <h3 class="legend-h">3. 승인 경로 뱃지 — 디자이너를 거치지 않은 승인</h3>
+      <p class="desc">세 경로 모두 도착 상태는 같은 <code>승인됨</code>입니다. 그래서 <b>뱃지가 유일한 구분 표면</b>입니다
+        — 디자이너 컨펌으로 승인된 건에는 뱃지가 붙지 않습니다.</p>
+      <table class="legend-table"><tbody>${approvalRows}</tbody></table>
+      <div class="legend-note">
+        둘 다 <b>사유가 필수</b>이고, 사유는 <b>컨펌 이력 · spec PR 본문 · Discord 알림</b> 세 곳에 남습니다.
+        디자이너가 <b>반려</b>한 스펙은 개발자가 이 방법으로 뒤집을 수 없습니다.
+      </div>
+
+      <h3 class="legend-h">4. 문서 종류 · 품질 뱃지</h3>
+      <p class="desc">종류는 목록 위 <b>탭</b>(전체 / 디자인 스펙 / 기능 스펙)으로 갈라 보고,
+        개별 스펙의 종류는 상세 패널 헤더에서 확인합니다.</p>
+      <table class="legend-table"><tbody>${docRows}</tbody></table>`;
   }
 
   function renderSkillGuide() {
@@ -274,9 +364,11 @@
         `<b>PR 생성</b> — 승인(<code>spec_approved</code>)되면 <code>PR 생성</code> → <code>&lt;prefix&gt;/&lt;이슈번호&gt;-&lt;slug&gt;/spec</code> 브랜치에 <code>docs/specs/{slug}/spec.md</code> + <code>docs/specs/{slug}/quality/spec-checklist.md</code> 커밋 → <b>base 브랜치로 PR</b> → <code>pr_open</code>`,
         `<b>이후 단계</b> — 머지되면 같은 base 브랜치에서 <code>/mino-plan</code>·<code>/mino-task</code>를 진행합니다. plan은 대시보드 검토 대상이 아닙니다`,
         `<b>승인 해제</b> — 승인 이후 <code>spec 수정</code> 시 수정본은 저장되고 상태만 <code>spec_draft</code> 복귀 + 열린 PR close (재컨펌 필요)`,
-        `<b>자체 승인</b> — 해제된 변경이 <b>디자인에 영향이 없을 때</b>(예: PRD 개정 반영으로 헤더 <code>기준 PRD 버전</code>만 갱신) <code>⚡ 자체 승인</code>으로 디자이너 컨펌 없이 <code>spec_approved</code>로 되돌립니다. <b>사유 필수</b>이며 디자이너가 한 번이라도 승인한 스펙에서만 뜹니다. 반려됨(<code>spec_changes_requested</code>)에서는 쓸 수 없고, 사유는 컨펌 이력·PR 본문·Discord 알림에 남습니다`,
+        `<b>자체 승인</b> — 해제된 변경이 <b>디자인에 영향이 없을 때</b>(예: PRD 개정 반영으로 헤더 <code>기준 PRD 버전</code>만 갱신) <code>⚡ 자체 승인</code>으로 디자이너 컨펌 없이 <code>spec_approved</code>로 되돌립니다`,
+        `<b>무검토 승인</b> — <b>화면이 없는 기능 스펙</b>(Figma 근거 없음)은 업로드 직후 <code>⚡ 무검토 승인</code>으로 디자이너를 거치지 않고 바로 <code>PR 생성</code>까지 갈 수 있습니다. 디자이너 승인 이력이 없는 승인이라 목록·상세에 <b>빨간 무검토 승인</b> 배지가 붙고, Discord 로 디자이너에게 사유와 함께 알림이 갑니다`,
+        `<b>두 승인의 공통 조건</b> — <b>사유 필수</b> · <code>작성중</code>에서만(반려됨에서는 불가 — 디자이너 반려를 뒤집을 수 없습니다) · 품질 체크리스트가 <code>PASS</code>여야 하고, 디자이너 승인 이력이 없는 스펙은 <code>[TBD]</code>가 0건이어야 합니다(확정할 항목이 남았다면 컨펌 요청 대상입니다). 조건에 걸리면 버튼이 비활성으로 남고 툴팁에 이유가 표시됩니다`,
       ],
-      note: `상세 패널의 <b>버전 스냅샷</b>에서 버전별 메모를 확인·편집하고, 재검토 시 "지난 검토 이후 변경분" diff를 열 수 있습니다. 버전 값 자체는 <code>/mino-spec</code>이 소유합니다.`,
+      note: `목록 위 <b>전체 / 디자인 스펙 / 기능 스펙</b> 탭으로 Figma 근거가 있는 스펙과 없는 스펙을 갈라 볼 수 있습니다(건수 표시 · 상태 필터와 함께 걸립니다). 상세 패널의 <b>버전 스냅샷</b>에서 버전별 메모를 확인·편집하고, 재검토 시 "지난 검토 이후 변경분" diff를 열 수 있습니다. 버전 값 자체는 <code>/mino-spec</code>이 소유합니다.`,
     },
     designer: {
       intro: `디자이너는 <b>spec 컨펌 게이트</b>를 담당합니다. 검토 중인 스펙을 유저 플로우 단위로 확인하고 <b>승인 / 반려</b>로 파이프라인을 통과시킵니다.
@@ -287,9 +379,10 @@
         `<b>승인</b> — <code>spec_approved</code>로 전환, 개발자의 PR 생성 잠금 해제`,
         `<b>반려</b> — <code>spec_changes_requested</code>로 전환. <b>코멘트가 1개 이상</b> 있어야 반려 가능(무엇을 고칠지 없이 반려 불가)`,
         `<b>보충 코멘트</b> — 이미 반려된 스펙에 상태 변경 없이 코멘트만 더할 때 <code>💬 코멘트 추가</code> 사용`,
-        `<b>자체 승인 확인</b> — 개발자가 <b>디자인 영향이 없다고 판단한 재업로드</b>는 컨펌 없이 승인될 수 있습니다(<code>⚡ 자체 승인</code>). 이때 Discord 로 <b>사유와 함께</b> 알림이 오고, 목록·상세에 <b>자체 승인</b> 배지가 붙습니다. 확인해보고 검토가 필요하다고 판단되면 개발자에게 재컨펌을 요청하세요`,
+        `<b>자체 승인 확인</b> — 개발자가 <b>디자인 영향이 없다고 판단한 재업로드</b>는 컨펌 없이 승인될 수 있습니다(<code>⚡ 자체 승인</code> · 노란 배지). 이때 Discord 로 <b>사유와 함께</b> 알림이 오고, 확인해보고 검토가 필요하면 개발자에게 재컨펌을 요청하세요`,
+        `<b>무검토 승인 확인</b> — <b>화면이 없는 기능 스펙</b>은 디자이너 검토를 아예 거치지 않고 승인될 수 있습니다(<code>⚡ 무검토 승인</code>). 이 건은 <b>빨간 무검토 승인</b> 배지 + 스테퍼의 <code>검토</code> 단계가 <b>점선(건너뜀)</b>으로 표시되고, Discord 알림도 별도 문구로 옵니다. 목록 위 <b>기능 스펙</b> 탭으로 "Figma 근거가 없는 스펙"만 추려 감사할 수 있습니다`,
       ],
-      note: `검토 중(<code>spec_in_review</code>)에는 개발자가 spec을 수정할 수 없습니다. 개발자가 승인 이후 spec을 수정하면 승인이 자동 해제되어 다시 검토 대기로 돌아올 수 있습니다. 첫 승인은 반드시 디자이너가 합니다 — 자체 승인은 이미 한 번 승인된 스펙에서만 가능합니다.`,
+      note: `검토 중(<code>spec_in_review</code>)에는 개발자가 spec을 수정할 수 없습니다. 개발자가 승인 이후 spec을 수정하면 승인이 자동 해제되어 다시 검토 대기로 돌아올 수 있습니다. 디자이너가 <b>반려</b>한 스펙은 개발자가 자체·무검토 승인으로 뒤집을 수 없습니다 — 반려는 반드시 재검토를 거칩니다.`,
     },
   };
 
@@ -305,7 +398,9 @@
   }
 
   // ===================== Filtering =====================
-  function filtered() {
+  // 탭(디자인/기능)은 다른 필터와 AND 로 합성된다. 탭 카운트는 "탭만 뺀 나머지 조건"
+  // 기준이어야 지금 화면에서 탭을 눌렀을 때 나올 건수와 일치한다 → withoutKind 로 분리.
+  function withoutKind() {
     const me = auth.currentUser();
     return features.all().filter((f) => {
       if (state.status !== 'all' && f.status !== state.status) return false;
@@ -318,9 +413,11 @@
       return true;
     });
   }
+  const matchesKind = (f) => state.kind === 'all' || specKind(f) === state.kind;
+  function filtered() { return withoutKind().filter(matchesKind); }
 
   // ===================== Render =====================
-  function renderAll() { applyDeepLink(); renderPrdChip(); renderKpis(); renderStatusList(); renderCenter(); renderDetail(); }
+  function renderAll() { applyDeepLink(); renderPrdChip(); renderKpis(); renderStatusList(); renderKindTabs(); renderCenter(); renderDetail(); }
 
   // ?feature={id} 진입 — 해당 feature가 로드되어 있으면 선택하고 소비, 없으면 다음 렌더에서 재시도
   function applyDeepLink() {
@@ -358,6 +455,18 @@
         <span>${esc(s.name)}</span><span class="count">${s.count}</span></div>`).join('');
     document.querySelectorAll('#status-list .mod-item').forEach((it) =>
       it.addEventListener('click', () => { state.status = it.dataset.st; renderAll(); }));
+  }
+
+  // 디자인 스펙 / 기능 스펙 탭 — 모든 스펙이 정확히 하나에 속하는 배타 축이라 칩(가산 토글)이
+  // 아니라 탭으로 둔다. 카운트는 다른 필터를 반영해 "누르면 나올 건수"와 일치시킨다.
+  function renderKindTabs() {
+    const base = withoutKind();
+    const n = (id) => (id === 'all' ? base.length : base.filter((f) => specKind(f) === id).length);
+    $('#kind-tabs').innerHTML = KIND_TABS.map((t) =>
+      `<button class="kind-tab ${state.kind === t.id ? 'active' : ''}" data-kind="${t.id}">
+        ${t.label}<span class="tab-count">${n(t.id)}</span></button>`).join('');
+    document.querySelectorAll('#kind-tabs .kind-tab').forEach((b) =>
+      b.addEventListener('click', () => { state.kind = b.dataset.kind; renderAll(); }));
   }
 
   function renderCenter() {
@@ -777,6 +886,7 @@
         <h2>${esc(f.title)}</h2>
         <div class="detail-badges">
           ${statusBadge(f.status)}
+          ${kindBadge(f)}
           ${selfApprovedBadge(f)}
           ${f.prNumber ? badge('PR #' + f.prNumber, 'blue') : ''}
         </div>
@@ -892,9 +1002,13 @@
   // 분기 상태(반려됨 · PR 종료)는 제목 아래 상태 칩이 이미 표시하므로 스테퍼에서는 중복 표기하지 않는다.
   function stepperHtml(f) {
     const cur = STEP_INDEX[f.status];
+    // 무검토 승인(P9.1)은 `검토`를 실제로 거치지 않는다 — done(초록)으로 칠하면 디자이너가 본 것으로 읽힌다.
+    const skipReview = cur > 1 && !reviewedByDesigner(f);
     return `<div class="stepper">${STEPS.map((s, i) => {
-      const cls = i < cur ? 'done' : (i === cur ? 'active' : '');
-      return `<div class="step ${cls}"><span class="dot"></span><span class="slabel">${s.label}</span></div>`;
+      const skipped = skipReview && s.key === 'spec_in_review';
+      const cls = skipped ? 'skipped' : (i < cur ? 'done' : (i === cur ? 'active' : ''));
+      const tip = skipped ? ' title="디자이너 검토를 거치지 않았습니다 (무검토 승인)"' : '';
+      return `<div class="step ${cls}"${tip}><span class="dot"></span><span class="slabel">${s.label}</span></div>`;
     }).join('<span class="sline"></span>')}</div>`;
   }
 
@@ -907,10 +1021,18 @@
     if (isDev) {
       if (['spec_draft', 'spec_changes_requested'].includes(f.status)) {
         btns.push(`<button class="btn-ghost" data-act="edit-spec">spec 수정</button>`);
-        // 자체 승인은 `spec_draft` + 디자이너 승인 이력이 있을 때만 — 반려됨에서는 뜨지 않는다.
-        if (canSelfApprove(f)) {
-          btns.push(`<button class="btn-ghost" data-act="self-approve"
-            title="디자인 영향이 없는 변경일 때만 — 디자이너 컨펌 없이 승인합니다(사유 필수)">⚡ 자체 승인</button>`);
+        // 자체/무검토 승인은 `spec_draft` 에서만 — 반려됨에서는 아예 뜨지 않는다(반려 뒤집기 차단).
+        // 나머지 가드(체크리스트 PASS · 신규는 [TBD] 0건)에 걸릴 때는 **숨기지 않고 비활성 + 이유**로
+        // 남긴다. 버튼이 사라지면 개발자는 왜 못 하는지 모른 채 컨펌 요청만 하게 된다.
+        if (f.status === 'spec_draft') {
+          const blocked = selfApproveBlock(f);
+          const label = approvedByDesigner(f) ? '⚡ 자체 승인' : '⚡ 무검토 승인';
+          const tip = blocked
+            || (approvedByDesigner(f)
+              ? '디자인 영향이 없는 변경일 때만 — 디자이너 컨펌 없이 승인합니다(사유 필수)'
+              : '디자이너 검토가 필요 없는 기능 스펙일 때만 — 검토 없이 승인합니다(사유 필수)');
+          btns.push(`<button class="btn-ghost" data-act="self-approve"${blocked ? ' disabled' : ''}
+            title="${esc(tip)}">${label}</button>`);
         }
         btns.push(`<button class="btn-primary" data-act="request-review">컨펌 요청</button>`);
       } else if (f.status === 'spec_approved') {
@@ -953,11 +1075,23 @@
       doTransition(() => features.requestReview(f.featureId));
     });
     on('self-approve', () => {
+      const blocked = selfApproveBlock(f);
+      if (blocked) { alert(blocked); return; }
+      const maintain = approvedByDesigner(f);            // 이미 디자이너가 한 번 본 스펙인가
+      const figma = ((f.figmaSources) || []).length;
+      // 화면 근거가 있는 스펙을 "검토 불필요"로 넘기는 건 오조작일 확률이 높다 — 한 번 더 묻는다.
+      if (!maintain && figma && !confirm(
+        `이 스펙에는 Figma 근거가 ${figma}건 있습니다 — 디자인 스펙일 수 있습니다.\n\n`
+        + '디자이너 검토 없이 승인할까요?')) return;
       // 사유 필수 — 이력·PR 본문·Discord 알림에 그대로 실린다.
-      const reason = prompt(
-        '디자이너 컨펌 없이 승인합니다 — 디자인에 영향이 없는 변경일 때만 사용하세요.\n'
-        + '사유는 컨펌 이력 · spec PR 본문 · Discord 알림에 그대로 남습니다.\n\n'
-        + '예) PRD 1.2.0 반영 — 기준 PRD 버전만 갱신, 화면·요구사항 변경 없음', '');
+      const reason = prompt(maintain
+        ? '디자이너 컨펌 없이 승인합니다 — 디자인에 영향이 없는 변경일 때만 사용하세요.\n'
+          + '사유는 컨펌 이력 · spec PR 본문 · Discord 알림에 그대로 남습니다.\n\n'
+          + '예) PRD 1.2.0 반영 — 기준 PRD 버전만 갱신, 화면·요구사항 변경 없음'
+        : '디자이너 검토 없이 승인합니다 — 화면·디자인 영향이 없는 기능 스펙일 때만 사용하세요.\n'
+          + '이 스펙은 디자이너 승인 이력이 없어 "무검토 승인"으로 기록되고, Discord 로 디자이너에게\n'
+          + '사유와 함께 알립니다(PR 본문에도 미체크로 남습니다).\n\n'
+          + '예) 화면 변경 없는 조회 로그 이벤트 추가 — Figma 근거 없음', '');
       if (reason === null) return;                       // 취소
       if (!reason.trim()) { alert('자체 승인 사유는 필수입니다.'); return; }
       doTransition(() => features.selfApprove(f.featureId, reason.trim()));
@@ -993,10 +1127,15 @@
     const TAG = {
       approved: badge('승인', 'green'), changes_requested: badge('반려', 'red'),
       comment: badge('코멘트', 'blue'),
-      self_approved: badge('자체 승인', 'amber', '개발자가 디자이너 컨펌 없이 승인 (사유 필수)'),
     };
-    const items = f.reviews.slice().reverse().map((r) => {
-      const tag = TAG[r.decision] || badge(r.decision, 'gray');
+    // 자체 승인 항목은 **그 시점에** 디자이너 승인 이력이 있었는지로 태그가 갈린다.
+    const selfTag = (i) => (approvedBefore(f.reviews, i)
+      ? badge('자체 승인', 'amber', '개발자가 디자이너 컨펌 없이 재승인 (사유 필수)')
+      : badge('무검토 승인', 'red', '디자이너 검토 이력 없이 개발자가 승인 (사유 필수)'));
+    const items = f.reviews.slice().reverse().map((r, ri) => {
+      const orig = f.reviews.length - 1 - ri;
+      const tag = r.decision === 'self_approved' ? selfTag(orig)
+        : (TAG[r.decision] || badge(r.decision, 'gray'));
       const cs = (r.comments || []).map((c) => `<li><b>${esc(c.section || '전체')}</b> — ${esc(c.body)}</li>`).join('');
       return `<div class="review-item">${tag} <span class="feat-sub">${esc(userName(r.reviewerUid))} · ${esc(r.reviewedAt)}</span>
         ${cs ? `<ul class="review-comments">${cs}</ul>` : ''}</div>`;
@@ -1395,7 +1534,7 @@
     const p = prdDoc();
     return V2.prdCompat(f && f.prdVersion, p ? p.version : '');
   }
-  // 목록에서는 **문제만** 보여준다 (tbdBadge 와 같은 규칙) — 최신·무해·미연결은 침묵.
+  // 목록에서는 **조치가 필요한 것만** 보여준다 (tbdBadge 와 같은 규칙) — 최신·영향없음·기준없음은 침묵.
   function compatBadge(f, always) {
     const c = compatOf(f);
     if (!always && ['same', 'patch', 'none'].includes(c.level)) return '';
@@ -1974,7 +2113,7 @@
     const lv = { init: '등록', major: 'MAJOR 개정', minor: 'MINOR 개정', patch: 'PATCH 개정', same: '본문 갱신' };
     const stale = features.all().filter((f) => V2.STALE_LEVELS.includes(compatOf(f).level));
     alert(`PRD ${res.created ? '등록' : lv[res.level] || '갱신'} 완료 — ${r.meta.version}`
-      + (stale.length ? `\n\n기준 PRD 버전이 뒤처진 스펙 ${stale.length}건이 있습니다:\n`
+      + (stale.length ? `\n\n이 개정으로 확인이 필요한 스펙 ${stale.length}건이 있습니다:\n`
         + stale.map((f) => `· ${f.title} (기준 ${f.prdVersion || '없음'})`).join('\n')
         + '\n\n[연결된 스펙] 탭에서 확인하세요.' : ''));
     renderPrdChip(); renderAll();

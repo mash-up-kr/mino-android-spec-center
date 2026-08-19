@@ -38,7 +38,7 @@ spec_draft → spec_in_review → spec_approved → pr_open → merged
 ```
 
 > 승인 후 spec을 수정하면 자동으로 **무효화**됩니다 — `spec_draft`로 복귀하고 열린 PR은 자동 close됩니다.
-> 해제된 변경이 **디자인에 영향이 없으면**(예: PRD 개정 반영) 개발자가 **`⚡ 자체 승인`**(사유 필수)으로 컨펌 왕복 없이 되돌릴 수 있습니다 — 첫 승인은 반드시 디자이너가 하고, 반려된 스펙에는 쓸 수 없습니다.
+> 해제된 변경이 **디자인에 영향이 없으면**(예: PRD 개정 반영) 개발자가 **`⚡ 자체 승인`**(사유 필수)으로 컨펌 왕복 없이 되돌릴 수 있고, 화면이 없는 **기능 스펙**은 첫 승인부터 **`⚡ 무검토 승인`**으로 디자이너를 거치지 않고 PR 까지 갈 수 있습니다 — 둘 다 체크리스트 `PASS` 인 `작성중` 스펙에서만 가능하며, 반려된 스펙에는 쓸 수 없습니다.
 > plan·task는 대시보드를 거치지 않습니다. spec PR이 base 브랜치에 머지된 뒤 같은 base 아래에서 `/mino-plan`·`/mino-task`로 이어집니다.
 
 ---
@@ -49,13 +49,14 @@ spec_draft → spec_in_review → spec_approved → pr_open → merged
 |---|---|---|
 | 📤 | **스펙 업로드 + 구조 검증** | `/mino-spec` 산출물 2개(`spec.md` + `quality/spec-checklist.md`)를 파일로 첨부(드롭 시 본문 H1으로 자동 분류). spec은 **S1–S6**, 체크리스트는 **C1–C7** 기계 검증 통과 시 생성. 상태 `DRAFT`·`[TBD]` 잔여·체크리스트 `FAILED`는 **차단하지 않고 경고** — 확정이 필요한 스펙일수록 검수에 올린다 ([validation.md](docs/design/validation.md)) |
 | ✅ | **디자이너 컨펌 게이트** | 유저 플로우/요구사항 단위 **인라인 코멘트**로 승인·반려. 검토 중에는 spec read-only 잠금 |
-| ⚡ | **자체 승인** | 디자인 영향이 없는 재업로드(PRD 개정 반영 등)는 개발자가 **사유를 남기고** 컨펌 없이 승인. 이미 디자이너 승인을 받은 스펙에서만 가능하고, 사유는 이력·PR 본문·Discord 알림에 남습니다 |
+| ⚡ | **자체 승인 / 무검토 승인** | 디자인 영향이 없는 재업로드(PRD 개정 반영 등)와 **화면이 없는 기능 스펙**은 개발자가 **사유를 남기고** 컨펌 없이 승인. 조건은 체크리스트 `PASS`(+ 신규는 `[TBD]` 0건)이고, 사유는 이력·PR 본문·Discord 알림에 남습니다. 디자이너 검토 이력이 없는 건은 **빨간 `무검토 승인`** 배지 + 스테퍼 `검토` 단계가 건너뜀으로 표시됩니다 |
+| 🎨 | **디자인 스펙 / 기능 스펙 탭** | Figma 근거(`figmaSources`) 유무로 파생하는 배타 축 — 목록 위 `전체 / 디자인 스펙 / 기능 스펙` 탭(건수 표시)으로 갈라 봅니다. 새 필드 없음 |
 | 🔀 | **base 브랜치 타겟 spec PR** | 승인 시 `<prefix>/<이슈번호>-<slug>/spec` 브랜치를 **이슈 base 브랜치에서 분기**해 커밋·PR 생성. base 목록은 GitHub API로 조회해 업로드 시 선택 |
 | 🔁 | **웹훅 상태 동기화** | PR merged/closed 이벤트를 HMAC 검증 후 수신 → Firestore 상태 자동 갱신 |
 | 🧬 | **버전 스냅샷** | 버전 값은 `/mino-spec` 스킬이 소유(헤더 `**버전**`). 대시보드는 버전별 본문 스냅샷만 남기고 MAJOR/MINOR/PATCH는 semver 비교로 파생 표시 |
 | 🧾 | **재검토 diff** | "지난 검토 이후 변경분"을 버전 스냅샷 기준으로 표시 |
 | 🔔 | **Discord 알림** | 컨펌 요청·승인·반려·무효화·머지를 Firestore 트리거가 감지해 **역할 멘션**과 함께 Discord로 전송(spec 파이프라인은 Android·Design 태그). 알림 클릭 시 해당 feature로 딥링크 ([상황별 미리보기](https://mash-up-kr.github.io/mino-android-spec-center/docs/v2/notifications/preview.html)) |
-| 📘 | **PRD 트랙 (상위 문서)** | `/mino-prd` 산출물(`docs/prd/business-context.md` · 프로젝트당 1개)을 업로드(**P1–P7** 검증 · 개발자 한정)해 팀 공용으로 두고, **전원이 섹션 앵커 댓글로 논의**(1단 답글 · 본인 수정/소프트 삭제 · `@` 자동완성 멘션). spec 헤더의 `**기준 PRD 버전**`으로 **버전 정합을 추적**(🔴비호환/🟡뒤처짐)하고, 임의 두 버전 **diff**(변경 섹션 요약)를 제공 ([설계](docs/design/prd-track.md)) |
+| 📘 | **PRD 트랙 (상위 문서)** | `/mino-prd` 산출물(`docs/prd/business-context.md` · 프로젝트당 1개)을 업로드(**P1–P7** 검증 · 개발자 한정)해 팀 공용으로 두고, **전원이 섹션 앵커 댓글로 논의**(1단 답글 · 본인 수정/소프트 삭제 · `@` 자동완성 멘션). spec 헤더의 `**기준 PRD 버전**`으로 **버전 정합을 추적**(🔴 스펙 재작성 필요 / 🟡 스펙 점검 필요 / 🟠 PRD 등록 필요)하고, 임의 두 버전 **diff**(변경 섹션 요약)를 제공 ([설계](docs/design/prd-track.md)) |
 | 📣 | **PRD 개정 방송** | 등록·MAJOR·MINOR 개정은 **Android·Design·iOS·Node 4개 역할 전부**에게 알립니다 — PRD는 제품 전체 문서라 플랫폼을 가리지 않습니다. **뒤처진 spec 목록을 동봉**하고, PATCH·본문 갱신은 무멘션. 댓글 알림은 **@멘션이 포함된 것만** ([상황별 미리보기](https://mash-up-kr.github.io/mino-android-spec-center/docs/v2/notifications/preview.html)) |
 | 🔒 | **역할 기반 보안규칙** | Firestore 규칙이 역할별 전이 허용목록·필드 잠금·위조 차단을 강제. 민감 전이는 Functions 전용 |
 

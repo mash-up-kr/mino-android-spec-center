@@ -168,14 +168,16 @@
       return { ok: true, feature: this.get(id) };
     },
 
+    /** 자체/무검토 승인 가드 결과를 UI 와 공유 (버튼 활성·툴팁이 store 와 같은 규칙을 쓴다) */
+    selfApproveBlock,
+
     /**
-     * 자체 승인 (P9): 개발자가 디자이너 컨펌 없이 spec_draft → spec_approved.
-     * PRD 개정 반영처럼 **디자인 영향이 없는 재업로드**로 승인이 해제됐을 때,
-     * 같은 문서를 디자이너에게 다시 올리는 왕복을 없앤다.
-     * 컨펌 게이트 자체가 무력해지지 않도록 두 가드로 좁힌다:
-     *   ① `spec_draft` 에서만 — 반려됨(`spec_changes_requested`)에서 열어주면
-     *      개발자가 디자이너의 반려를 뒤집을 수 있다.
-     *   ② 디자이너 `approved` 이력이 있는 스펙만 — 신규 스펙이 통째로 게이트를 우회하지 못한다.
+     * 자체 승인 / 무검토 승인 (P9 · P9.1): 개발자가 디자이너 컨펌 없이 spec_draft → spec_approved.
+     * 두 시나리오가 **같은 전이**를 쓴다:
+     *   ① 유지 승인 — PRD 개정 반영처럼 디자인 영향이 없는 재업로드로 승인이 해제된 스펙(P9)
+     *   ② 무검토 승인 — 화면이 없는 기능 스펙을 처음부터 검토 없이 PR 까지 보내는 경우(P9.1)
+     * ②를 열면서 "디자이너 승인 이력 필수" 가드는 빠졌고, 그 자리를 `selfApproveBlock`
+     * 의 보상 통제(체크리스트 PASS · 신규는 [TBD] 0건)가 대신 채운다.
      * 사유는 필수이며 `reviews[]` 에 남아 상세 이력·PR 본문·Discord 알림까지 따라간다.
      */
     selfApprove(id, reason) {
@@ -184,12 +186,8 @@
       const note = String(reason || '').trim();
       if (!note) return { ok: false, error: '자체 승인 사유는 필수입니다.' };
       const f = store[i];
-      if (f.status !== 'spec_draft') {
-        return { ok: false, error: '자체 승인은 작성중(spec_draft) 상태에서만 가능합니다.' };
-      }
-      if (!hasDesignerApproval(f)) {
-        return { ok: false, error: '디자이너 승인 이력이 없는 스펙은 자체 승인할 수 없습니다 — 첫 컨펌은 디자이너가 합니다.' };
-      }
+      const blocked = selfApproveBlock(f);
+      if (blocked) return { ok: false, error: blocked };
       f.status = 'spec_approved';
       f.reviews.push(review('self_approved', [{ section: '전체', body: note }]));
       f.updatedAt = today(); persist();
@@ -281,9 +279,34 @@
     return out;
   }
 
-  // 디자이너가 한 번이라도 승인한 적 있는 스펙인가 (자체 승인 가드 ②)
+  // 디자이너가 한 번이라도 승인한 적 있는 스펙인가 — 없으면 그 승인은 '무검토 승인'이다(P9.1)
   function hasDesignerApproval(f) {
     return (f.reviews || []).some((r) => r && r.decision === 'approved');
+  }
+
+  // 미해소 `[TBD]` 건수 (validate.js S6-w 와 같은 패턴)
+  const tbdLeft = (f) => (((f && f.specBody) || '').match(/\[TBD\b[^\]]*\]/g) || []).length;
+
+  /**
+   * 자체/무검토 승인 가드 — 통과하면 null, 막히면 사유 문자열(UI 툴팁에 그대로 쓴다).
+   * 개발자가 컨펌 게이트를 **스스로** 통과하는 경로이므로 디자이너 검토를 대신할 보상 통제를 건다.
+   *   ① `spec_draft` 에서만 — 반려됨(`spec_changes_requested`)에서 열어주면 디자이너의 반려를 뒤집는다
+   *   ② 체크리스트 `PASS` — 디자이너 검토를 생략하려면 **개발자 자가검증은 통과**해 있어야 한다.
+   *      스칼라 필드라 `firestore.rules` 에서도 같은 조건을 강제한다
+   *   ③ 디자이너 승인 이력이 **없을 때만** `[TBD]` 0건 — `[TBD]` 는 "디자이너와 확정할 지점" 표식이라
+   *      그걸 남긴 채 "검토 불필요"를 주장할 수 없다. 이미 승인된 스펙의 유지 승인에는 걸지 않는다
+   */
+  function selfApproveBlock(f) {
+    if (!f) return 'feature 없음';
+    if (f.status !== 'spec_draft') return '자체 승인은 작성중(spec_draft) 상태에서만 가능합니다.';
+    if (f.checklistStatus !== 'PASS') {
+      return `품질 체크리스트가 PASS 가 아닙니다(현재 ${f.checklistStatus || '없음'}) — 디자이너 검토를 생략하려면 자가검증은 통과해 있어야 합니다.`;
+    }
+    if (!hasDesignerApproval(f)) {
+      const n = tbdLeft(f);
+      if (n) return `미해소 [TBD] ${n}건 — 확정이 필요한 항목이 남은 스펙은 무검토 승인할 수 없습니다. 컨펌 요청으로 올려주세요.`;
+    }
+    return null;
   }
 
   function review(decision, comments) {

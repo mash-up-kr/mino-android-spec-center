@@ -85,35 +85,43 @@
   /**
    * spec 이 근거로 삼은 PRD 버전 ↔ 현재 PRD 버전.
    * 등급 의미는 `/mino-prd` SKILL.md §2 — "이미 갈라져 나간 하위 spec 이 영향을 받는가".
+   *
+   * **라벨은 행동 중심**(2026-08-19). 이전 라벨(`PRD 비호환`·`PRD 뒤처짐`·`PRD 갱신`)은
+   * ① 무엇을 해야 하는지 말해주지 않고 ② 주어가 헷갈렸다 — `PRD 뒤처짐` 은 실제로는
+   * **spec 이** 뒤처진 상태인데 PRD 가 낡은 것처럼 읽혔다. 그래서 조치 주체를 라벨에 담는다:
+   * `PRD 등록 필요` = PRD 를 올릴 사람 · `스펙 …` = spec 작성자.
+   * `level` 값은 내부 식별자이므로 그대로 둔다(정렬·알림·PR 본문이 참조).
+   *
    * @returns { level, label, color, hint }  level: none|same|patch|minor|major|ahead
    */
   function prdCompat(specPrdVersion, prdVersion) {
     const a = looseParse(specPrdVersion), b = looseParse(prdVersion);
     if (!a || !b) {
-      return { level: 'none', label: 'PRD 미연결', color: 'gray',
-        hint: 'spec 헤더 `**기준 PRD 버전**` 이 없거나 PRD 가 등록되지 않았습니다.' };
+      return { level: 'none', label: '기준 PRD 없음', color: 'gray',
+        hint: 'spec 헤더에 `**기준 PRD 버전**` 이 없거나, 대시보드에 PRD 가 아직 등록되지 않았습니다.' };
     }
     if (a[0] === b[0] && a[1] === b[1] && a[2] === b[2]) {
-      return { level: 'same', label: 'PRD 최신', color: 'green', hint: '현재 PRD 버전과 일치합니다.' };
+      return { level: 'same', label: 'PRD 최신', color: 'green',
+        hint: `현재 PRD(${prdVersion})를 기준으로 작성된 스펙입니다 — 할 일 없음.` };
     }
     // spec 이 더 높은 버전을 가리킴 = 최신 PRD 가 아직 업로드되지 않음
     for (let i = 0; i < 3; i++) {
       if (a[i] > b[i]) {
-        return { level: 'ahead', label: 'PRD 미업로드', color: 'amber',
-          hint: `spec 이 PRD ${specPrdVersion} 을 근거로 하는데 등록된 PRD 는 ${prdVersion} 입니다 — 최신 PRD 를 올려주세요.` };
+        return { level: 'ahead', label: 'PRD 등록 필요', color: 'amber',
+          hint: `이 스펙은 PRD ${specPrdVersion} 을 보고 썼는데, 대시보드에는 ${prdVersion} 까지만 올라와 있습니다 — 최신 PRD 를 업로드해 주세요.` };
       }
       if (a[i] < b[i]) break;
     }
     if (a[0] !== b[0]) {
-      return { level: 'major', label: 'PRD 비호환', color: 'red',
-        hint: `PRD ${prdVersion} 에서 MVP 경계·용어가 바뀌었습니다(기준 ${specPrdVersion}) — \`/mino-spec\` 재실행이 필요합니다.` };
+      return { level: 'major', label: '스펙 재작성 필요', color: 'red',
+        hint: `이 스펙은 PRD ${specPrdVersion} 기준인데, PRD 가 ${prdVersion} 로 크게 바뀌었습니다(MVP 경계·용어 변경) — \`/mino-spec\` 을 다시 실행해 스펙을 새로 만들어야 합니다.` };
     }
     if (a[1] !== b[1]) {
-      return { level: 'minor', label: 'PRD 뒤처짐', color: 'amber',
-        hint: `PRD 가 ${prdVersion} 로 확장됐습니다(기준 ${specPrdVersion}) — 추가된 항목과 겹치면 재실행하세요.` };
+      return { level: 'minor', label: '스펙 점검 필요', color: 'amber',
+        hint: `이 스펙은 PRD ${specPrdVersion} 기준인데, PRD ${prdVersion} 에 항목이 추가됐습니다 — 추가된 내용이 이 스펙과 겹치는지 확인하고, 겹치면 \`/mino-spec\` 을 다시 실행하세요.` };
     }
-    return { level: 'patch', label: 'PRD 갱신', color: 'gray',
-      hint: `PRD ${prdVersion} 은 표현·링크 수준 변경입니다(기준 ${specPrdVersion}) — 재실행 불필요.` };
+    return { level: 'patch', label: '영향 없음', color: 'gray',
+      hint: `PRD ${prdVersion} 은 표현·링크만 손본 변경입니다(이 스펙 기준 ${specPrdVersion}) — 스펙에 영향 없습니다.` };
   }
 
   // 재실행 검토가 필요한 등급 (알림·리포트에서 "뒤처진 spec" 으로 추리는 기준)

@@ -99,7 +99,8 @@ spec-center는 **Spec Driven Development(SDD) 문서 파이프라인의 컨트�
 - 승인 단위: **spec 문서 전체** (화면별 X).
 - **검토 중 잠금**: `in_review` 동안 spec read-only.
 - **무효화**: `approved` spec을 어떤 수정이든 하면 → `draft` 복귀, 재컨펌 필수. (v3: `planStale` 폐기)
-- **자체 승인(P9, 2026-08-19)**: 무효화된 변경이 디자인에 영향이 없으면 개발자가 `spec_draft → spec_approved`를 직접 통과시킨다. **사유 필수**, **디자이너 승인 이력이 있는 스펙만**, **반려됨에서는 불가**. 도착 상태는 같은 `spec_approved`이고 구분은 `reviews[].decision='self_approved'`에만 남는다 → [state-machine.md](design/state-machine.md) §2.1
+- **자체 승인 / 무검토 승인(P9 · P9.1, 2026-08-19)**: 개발자가 `spec_draft → spec_approved`를 직접 통과시킨다. 두 시나리오가 같은 전이를 쓴다 — ① **유지 승인**: 무효화된 변경이 디자인에 영향이 없을 때(PRD 개정 반영 등) ② **무검토 승인**: 화면이 없는 **기능 스펙**을 처음부터 검토 없이 PR 까지 보낼 때. 공통 조건은 **사유 필수** · **체크리스트 `PASS`** · **반려됨에서는 불가**이고, 디자이너 승인 이력이 없는 경우엔 추가로 **`[TBD]` 0건**. 도착 상태는 같은 `spec_approved`이고 구분은 `reviews[]`에서 파생한다 → [state-machine.md](design/state-machine.md) §2.1
+- **디자인 스펙 / 기능 스펙(P9.1)**: `figmaSources` 유무로 파생하는 표시 축. 모든 스펙이 정확히 하나에 속하는 **배타 축**이라 목록 위 **탭**(건수 표시)으로 가른다. **전용 필드를 만들지 않는다** → [state-machine.md](design/state-machine.md) §2.2
 - **코멘트**: 디자이너 결정 + spec **섹션(제목) 앵커 인라인 코멘트**(Notion식). 미리보기에서 각 H2/H3 옆 💬로 코멘트를 달고, 코멘트별 개별 삭제 가능. 반려 제출 시 코멘트 ≥1 필수.
 - **반려 후 보충 코멘트**: `changes_requested` 상태에서도 디자이너가 스펙을 다시 열어 **상태 변화 없이** 코멘트를 추가할 수 있다(리뷰 결정 `decision=comment`). 승인/반려 "결정"과 구분되어 이력에 누적된다.
 - **출처 링크 첨부**: spec이 어떤 Figma 링크 기반인지 source URL을 메타로 첨부해 컨펌 화면에 노출.

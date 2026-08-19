@@ -38,7 +38,8 @@ const COLORS = {
   approved: 0x22c55e, // green — 승인
   rejected: 0xef4444, // red — 반려
   invalid: 0xf97316,  // orange — 무효화(UI 표기: 승인 해제)
-  selfApproved: 0x0ea5e9, // sky — 개발자 자체 승인(디자이너 컨펌 생략)
+  selfApproved: 0x0ea5e9, // sky — 개발자 자체 승인(이미 승인된 스펙의 유지 승인)
+  noReviewApproved: 0xdc2626, // red — 무검토 승인(디자이너 검토 이력 없음). 대시보드 배지도 red 로 맞춤
   merged: 0x8b5cf6,   // purple — 머지(확정)
 };
 
@@ -115,14 +116,28 @@ function buildMessage(id, before, after) {
   // 개발자 자체 승인 — 디자이너 컨펌을 건너뛴 승인이라 **Design 을 태그**한다.
   // 대시보드에 승인 철회 경로가 없으므로 이 알림이 디자이너의 유일한 사후 확인 지점이다.
   // 사유를 본문에 그대로 실어 "왜 컨펌을 생략했는지"를 채널에서 바로 판단할 수 있게 한다.
+  // 문구는 둘로 갈린다 — 디자이너 `approved` 이력이 **없으면** 게이트를 한 번도 통과한 적 없는
+  // 무검토 승인(P9.1)이라 확인 필요도가 다르다.
   if (after.status === 'spec_approved' && before.status === 'spec_draft') {
     const why = selfApprovalReason(before, after);
+    const seen = (Array.isArray(before.reviews) ? before.reviews : [])
+      .some((r) => r && r.decision === 'approved');
+    if (seen) {
+      return {
+        title: `⚡ 자체 승인: ${t} ${v}`, roles: [ROLE_DESIGN], color: COLORS.selfApproved,
+        body: [
+          '개발자가 **디자인 영향 없음**으로 판단해 컨펌 없이 승인했습니다.',
+          why ? `**사유** — ${why}` : '',
+          '검토가 필요하다고 판단되면 개발자에게 재컨펌을 요청하세요.',
+        ].filter(Boolean).join('\n\n'),
+      };
+    }
     return {
-      title: `⚡ 자체 승인: ${t} ${v}`, roles: [ROLE_DESIGN], color: COLORS.selfApproved,
+      title: `⚡ 무검토 승인: ${t} ${v}`, roles: [ROLE_DESIGN], color: COLORS.noReviewApproved,
       body: [
-        '개발자가 **디자인 영향 없음**으로 판단해 컨펌 없이 승인했습니다.',
+        '**디자이너 검토 이력이 없는 스펙**을 개발자가 검토 불필요로 판단해 승인했습니다 — 이대로 spec PR 이 열립니다.',
         why ? `**사유** — ${why}` : '',
-        '검토가 필요하다고 판단되면 개발자에게 재컨펌을 요청하세요.',
+        '디자인 확인이 필요한 스펙이었다면 개발자에게 재컨펌을 요청하세요.',
       ].filter(Boolean).join('\n\n'),
     };
   }
