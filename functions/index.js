@@ -291,6 +291,18 @@ function prdAlignLine(f, prdVersion) {
   return `- [ ] 기준 PRD 뒤처짐 (${level.toUpperCase()}) — spec 기준 \`${base}\` / 현재 PRD \`${prdVersion}\` · ${what}`;
 }
 
+// 얼라인 체크리스트 첫 줄은 승인 경로에 따라 갈린다. 상태는 둘 다 `spec_approved` 라
+// 구분은 `reviews[]` 의 마지막 승인 항목에만 남는다. 개발자 자체 승인(P9)은 디자이너가
+// 보지 않은 승인이므로 **미체크 + 사유**로 남겨 CODEOWNERS 리뷰어가 알아채게 한다.
+function approvalLine(f) {
+  const list = (Array.isArray(f.reviews) ? f.reviews : [])
+    .filter((r) => r && (r.decision === 'approved' || r.decision === 'self_approved'));
+  const last = list.length ? list[list.length - 1] : null;
+  if (!last || last.decision !== 'self_approved') return '- [x] spec 컨펌됨 (디자이너 승인)';
+  const why = String((((last.comments || [])[0] || {}).body) || '').replace(/\s+/g, ' ').trim();
+  return `- [ ] spec 컨펌 — **개발자 자체 승인**(디자이너 컨펌 생략)${why ? ` · 사유: ${why}` : ''}`;
+}
+
 function prTemplate(f, baseBranch, headBranch, prdVersion) {
   const issue = (BASE_BRANCH_RE.exec(baseBranch || '') || [])[1];
   // DRAFT·[TBD] 스펙도 업로드·컨펌이 가능하므로 체크 상태를 실제 산출물 값으로 반영한다.
@@ -312,7 +324,7 @@ function prTemplate(f, baseBranch, headBranch, prdVersion) {
     c ? `- \`${dir}/quality/spec-checklist.md\` — 품질 검증 결과` : null,
     '',
     '### 얼라인 체크리스트',
-    '- [x] spec 컨펌됨 (디자이너 승인)',
+    approvalLine(f),
     quality,
     prdAlignLine(f, prdVersion),
     f.specStatus === 'CREATED' ? null : `- [ ] spec 헤더 상태 확정 — 현재 \`${f.specStatus || '미상'}\``,

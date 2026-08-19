@@ -27,8 +27,10 @@ features/{featureId}
   ├─ checklistBody: string     # quality/spec-checklist.md 본문 (SoT) — 업로드 필수, 검수 대상 아님
   ├─ checklistStatus: string   # 체크리스트 헤더 `**상태**` (PASS | FAILED | DRAFT)
   ├─ checklistTargetVersion: string  # 체크리스트 헤더 `**대상 스펙**` 의 spec 버전 (불일치 시 경고)
-  ├─ reviews: [{ decision, comments, reviewerUid, reviewedAt }]  # 디자이너 컨펌 이력 (MVP: 배열 필드, 서브컬렉션 전환은 후속)
-  │    ├─ decision: 'approved' | 'changes_requested' | 'comment'  # comment=상태변화 없는 보충 코멘트
+  ├─ reviews: [{ decision, comments, reviewerUid, reviewedAt }]  # 컨펌 이력 (MVP: 배열 필드, 서브컬렉션 전환은 후속)
+  │    ├─ decision: 'approved' | 'changes_requested' | 'comment' | 'self_approved'
+  │    │    # comment       = 상태변화 없는 보충 코멘트(디자이너)
+  │    │    # self_approved = 개발자 자체 승인(P9) — reviewerUid 가 **개발자**이고 comments[0].body 가 사유(필수)
   │    └─ comments: [{ section, body }]   # 섹션 인라인 코멘트
   ├─ createdBy: uid
   └─ createdAt / updatedAt: timestamp
@@ -88,6 +90,7 @@ prds/{prdId}                      # MVP: 'business-context' 하나
 - `versionLog[].body`는 재검토 diff 전용 스냅샷이다. 같은 버전으로 재업로드하면 새 항목을 만들지 않고 마지막 항목의 스냅샷만 갱신한다.
 - `baseBranch`는 대시보드가 추측하지 않는다. `listBaseBranches`(Functions → GitHub API)가 `<prefix>/<번호>-<slug>/base` 패턴 브랜치를 조회해 주고, 개발자가 업로드 시 고른 값을 저장한다.
 - `reviews[]`는 append-only 이력(현재 배열 필드, `arrayUnion`). 현재 컨펌 결과는 `features.status`로 판단.
+- **`self_approved` 는 `reviews[]` 에만 남는다** — 자체 승인의 도착 상태도 `spec_approved` 라 `status` 로는 구분되지 않는다. 뱃지·PR 본문·알림은 마지막 승인 항목의 `decision` 에서 파생한다([state-machine.md](state-machine.md) §2.1). 새 필드를 두지 않으므로 기존 문서 마이그레이션도 없다.
 
 ## 2. Storage — 사용 안 함
 

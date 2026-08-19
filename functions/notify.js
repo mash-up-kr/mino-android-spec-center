@@ -38,6 +38,7 @@ const COLORS = {
   approved: 0x22c55e, // green — 승인
   rejected: 0xef4444, // red — 반려
   invalid: 0xf97316,  // orange — 무효화(UI 표기: 승인 해제)
+  selfApproved: 0x0ea5e9, // sky — 개발자 자체 승인(디자이너 컨펌 생략)
   merged: 0x8b5cf6,   // purple — 머지(확정)
 };
 
@@ -110,6 +111,20 @@ function buildMessage(id, before, after) {
   }
   if (after.status === 'spec_approved' && before.status === 'spec_in_review') {
     return { title: `✅ 승인됨: ${t}`, roles: [ROLE_ANDROID], color: COLORS.approved };
+  }
+  // 개발자 자체 승인 — 디자이너 컨펌을 건너뛴 승인이라 **Design 을 태그**한다.
+  // 대시보드에 승인 철회 경로가 없으므로 이 알림이 디자이너의 유일한 사후 확인 지점이다.
+  // 사유를 본문에 그대로 실어 "왜 컨펌을 생략했는지"를 채널에서 바로 판단할 수 있게 한다.
+  if (after.status === 'spec_approved' && before.status === 'spec_draft') {
+    const why = selfApprovalReason(before, after);
+    return {
+      title: `⚡ 자체 승인: ${t} ${v}`, roles: [ROLE_DESIGN], color: COLORS.selfApproved,
+      body: [
+        '개발자가 **디자인 영향 없음**으로 판단해 컨펌 없이 승인했습니다.',
+        why ? `**사유** — ${why}` : '',
+        '검토가 필요하다고 판단되면 개발자에게 재컨펌을 요청하세요.',
+      ].filter(Boolean).join('\n\n'),
+    };
   }
   if (after.status === 'spec_changes_requested' && before.status === 'spec_in_review') {
     return {
@@ -250,6 +265,18 @@ async function postDiscord({ roles, embed }) {
   } catch (e) {
     console.error('notify: Discord 전송 실패', e.message); // 알림 실패가 파이프라인을 막지 않는다
   }
+}
+
+// 자체 승인 쓰기에 함께 담겨온 사유 (reviews[] 에 append 된 self_approved 항목)
+function selfApprovalReason(before, after) {
+  const prev = Array.isArray(before.reviews) ? before.reviews.length : 0;
+  const cur = Array.isArray(after.reviews) ? after.reviews : [];
+  const body = cur.slice(prev)
+    .filter((r) => r && r.decision === 'self_approved')
+    .flatMap((r) => r.comments || [])
+    .map((c) => String((c && c.body) || '').trim())
+    .filter(Boolean)[0] || '';
+  return body.length > 300 ? `${body.slice(0, 300)}…` : body;
 }
 
 // 반려 쓰기에 함께 담겨온 새 리뷰의 코멘트 요약 (최대 3건, 각 80자)

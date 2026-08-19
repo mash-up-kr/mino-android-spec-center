@@ -226,6 +226,11 @@
     };
   }
 
+  // 디자이너가 한 번이라도 승인한 적 있는 스펙인가 (자체 승인 가드 ②)
+  function hasDesignerApproval(f) {
+    return (f.reviews || []).some((r) => r && r.decision === 'approved');
+  }
+
   const features = {
     enums() { return ENUMS; },
     meta() { return { project: 'Team-MINO-Android', generatedAt: 'live(Firestore)' }; },
@@ -328,6 +333,33 @@
       if (f.status !== 'spec_in_review') return { ok: false, error: '검토 중 상태가 아닙니다.' };
       await db.doc('features/' + id).update({
         status: 'spec_approved', reviews: arrayUnion(reviewObj('approved', [])), updatedAt: serverTs(),
+      });
+      return { ok: true, feature: { featureId: id } };
+    },
+
+    /**
+     * 자체 승인 (P9): 개발자가 디자이너 컨펌 없이 spec_draft → spec_approved.
+     * PRD 개정 반영처럼 **디자인 영향이 없는 재업로드**로 승인이 해제됐을 때
+     * 같은 문서를 디자이너에게 다시 올리는 왕복을 없앤다. 가드 둘(설계: store.js 주석):
+     *   ① `spec_draft` 에서만 (반려 뒤집기 차단 — 보안규칙 `devTransitionOk` 도 같은 제한)
+     *   ② 디자이너 `approved` 이력이 있는 스펙만 (신규 스펙의 게이트 우회 차단 — 클라 전용 가드)
+     * 사유는 필수이며 `reviews[]` → 상세 이력 · PR 본문 · Discord 알림으로 따라간다.
+     */
+    async selfApprove(id, reason) {
+      const f = findCache(id); if (!f) return { ok: false, error: 'feature 없음' };
+      if (!auth.isDeveloper()) return { ok: false, error: '개발자만 자체 승인 가능' };
+      const note = String(reason || '').trim();
+      if (!note) return { ok: false, error: '자체 승인 사유는 필수입니다.' };
+      if (f.status !== 'spec_draft') {
+        return { ok: false, error: '자체 승인은 작성중(spec_draft) 상태에서만 가능합니다.' };
+      }
+      if (!hasDesignerApproval(f)) {
+        return { ok: false, error: '디자이너 승인 이력이 없는 스펙은 자체 승인할 수 없습니다 — 첫 컨펌은 디자이너가 합니다.' };
+      }
+      await db.doc('features/' + id).update({
+        status: 'spec_approved',
+        reviews: arrayUnion(reviewObj('self_approved', [{ section: '전체', body: note }])),
+        updatedAt: serverTs(),
       });
       return { ok: true, feature: { featureId: id } };
     },

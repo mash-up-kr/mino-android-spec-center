@@ -52,9 +52,14 @@ service cloud.firestore {
 
       // 개발자 허용 상태 전이 (from → to). pr_open/merged/pr_closed 로의 전이는 없음(Functions 전용).
       // plan 검토 단계(plan_drafted) 폐기 — spec_approved 다음은 곧바로 Functions 의 pr_open.
+      // 자체 승인(P9)은 `spec_draft` 에서만 허용한다 — 반려됨(`spec_changes_requested`)에서
+      // 열어주면 개발자가 디자이너의 반려를 뒤집을 수 있어 컨펌 게이트가 무의미해진다.
+      // "디자이너 승인 이력이 있는 스펙만" 가드는 규칙으로 강제할 수 없다(rules 에는
+      // 배열 원소를 훑는 연산이 없다) — 클라이언트(store.selfApprove)가 담당한다.
       function devTransitionOk(from, to) {
         return (to == from && from != 'spec_in_review')   // 상태유지 수정(내용/메모) — 검토중은 read-only
           || (to == 'spec_in_review' && (from == 'spec_draft' || from == 'spec_changes_requested'))
+          || (to == 'spec_approved' && from == 'spec_draft')   // 자체 승인 (사유 필수 · 재컨펌 왕복 제거)
           || (to == 'spec_draft' && (from == 'spec_approved' || from == 'pr_open' || from == 'merged'));
       }
       // 디자이너 허용 상태 전이 — 승인/반려/보충코멘트(상태유지)만

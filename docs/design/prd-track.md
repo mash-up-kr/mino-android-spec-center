@@ -1,7 +1,7 @@
 # PRD 트랙 (P8 설계 명세)
 
 > 출처: [PRD](../PRD.md) 4.9 · Mino-Android `mino-sdd/template/prd-template.md` · `.claude/skills/mino-prd/SKILL.md`
-> 상태: **구현 완료 · 배포 대기** (2026-08-15) — mock 모드 e2e 통과, Functions·rules 재배포와 실 `/mino-prd` 산출물 e2e 만 남음
+> 상태: **구현 완료 · 배포됨** (rules·Functions 2026-08-19) — mock 모드 e2e 통과. 실 `/mino-prd` 산출물 e2e 만 남음
 > 단위: `docs/prd/business-context.md` **프로젝트당 1개**. spec 이 `features/{id}` 단위로 흐르는 것과 달리 PRD 는 **싱글턴**이다.
 > SoT = Firestore(`prds/{id}`). 레포 파일은 스냅샷이며 역수정하지 않는다 — spec 과 같은 원칙.
 
@@ -308,7 +308,7 @@ match /prds/{prdId} {
 - [x] `(BE)` (선택) `notifyOnPrdComment` — 멘션 포함 댓글만
 
 ### P8.6 · 배포 · e2e
-- [ ] `(ops)` rules·Functions 재배포 · 캐시 버스팅([index.html](../../index.html) `?v=`)
+- [x] `(ops)` rules·Functions 재배포 · 캐시 버스팅([index.html](../../index.html) `?v=`) — **완료(2026-08-19)**
 - [ ] 실 `/mino-prd` 산출물로 e2e — 업로드 → 개정 → diff → 댓글 → 알림 수신
 - [ ] MAJOR 개정 시 뒤처진 spec 목록이 정확한지 대조
 

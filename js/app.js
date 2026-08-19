@@ -76,6 +76,27 @@
     return n ? badge(`TBD ${n}건`, 'amber', `미해소 [TBD] ${n}건 — 검수에서 확정이 필요한 항목입니다`) : '';
   };
 
+  // ---------- 자체 승인 (P9) ----------
+  // 승인 경로가 둘(디자이너 컨펌 · 개발자 자체 승인)이지만 상태는 같은 `spec_approved` 다.
+  // 구분은 `reviews[]` 의 decision 으로만 남으므로, 디자이너가 "내가 안 본 승인"을
+  // 목록에서 훑을 수 있도록 배지로 끌어올린다.
+  const APPROVAL_DECISIONS = ['approved', 'self_approved'];
+  function lastApproval(f) {
+    const list = ((f && f.reviews) || []).filter((r) => r && APPROVAL_DECISIONS.includes(r.decision));
+    return list.length ? list[list.length - 1] : null;
+  }
+  // 버튼 노출 조건 = store.selfApprove 의 가드와 같은 규칙 (①작성중 ②디자이너 승인 이력)
+  const canSelfApprove = (f) => !!f && f.status === 'spec_draft'
+    && ((f.reviews || []).some((r) => r && r.decision === 'approved'));
+  const selfApprovedBadge = (f) => {
+    if (!f || !['spec_approved', 'pr_open', 'merged'].includes(f.status)) return '';
+    const a = lastApproval(f);
+    if (!a || a.decision !== 'self_approved') return '';
+    const why = ((a.comments || [])[0] || {}).body || '';
+    return badge('자체 승인', 'amber',
+      `디자이너 컨펌 없이 개발자가 승인했습니다${why ? ` — 사유: ${why}` : ''}`);
+  };
+
   // ===================== Auth =====================
   function renderLoginUsers() {
     $('#login-users').innerHTML = auth.users().map((u) =>
@@ -207,6 +228,9 @@
         <b>게이트</b> · spec <b>승인(spec_approved)</b> 전에는 PR 생성 불가.
         승인 후 spec을 수정하면 <b>승인이 해제</b>됩니다 — 수정본은 저장되고 상태만 작성중으로 돌아가며,
         열린 PR은 자동 종료됩니다.
+        해제된 뒤 <b>디자인 영향이 없는 변경</b>(예: PRD 개정 반영)이라면 개발자가 <b>⚡ 자체 승인</b>으로
+        컨펌 왕복 없이 되돌릴 수 있습니다 — <b>사유 필수</b>이고, 디자이너가 한 번이라도 승인한 스펙에서만
+        가능하며, 이력·PR 본문·Discord 알림에 <b>자체 승인</b>으로 표시됩니다.
         spec PR은 <code>develop</code>이 아니라 이슈의 <b>base 브랜치</b>(<code>…/base</code>)를 타겟합니다.
       </div>`;
   }
@@ -250,6 +274,7 @@
         `<b>PR 생성</b> — 승인(<code>spec_approved</code>)되면 <code>PR 생성</code> → <code>&lt;prefix&gt;/&lt;이슈번호&gt;-&lt;slug&gt;/spec</code> 브랜치에 <code>docs/specs/{slug}/spec.md</code> + <code>docs/specs/{slug}/quality/spec-checklist.md</code> 커밋 → <b>base 브랜치로 PR</b> → <code>pr_open</code>`,
         `<b>이후 단계</b> — 머지되면 같은 base 브랜치에서 <code>/mino-plan</code>·<code>/mino-task</code>를 진행합니다. plan은 대시보드 검토 대상이 아닙니다`,
         `<b>승인 해제</b> — 승인 이후 <code>spec 수정</code> 시 수정본은 저장되고 상태만 <code>spec_draft</code> 복귀 + 열린 PR close (재컨펌 필요)`,
+        `<b>자체 승인</b> — 해제된 변경이 <b>디자인에 영향이 없을 때</b>(예: PRD 개정 반영으로 헤더 <code>기준 PRD 버전</code>만 갱신) <code>⚡ 자체 승인</code>으로 디자이너 컨펌 없이 <code>spec_approved</code>로 되돌립니다. <b>사유 필수</b>이며 디자이너가 한 번이라도 승인한 스펙에서만 뜹니다. 반려됨(<code>spec_changes_requested</code>)에서는 쓸 수 없고, 사유는 컨펌 이력·PR 본문·Discord 알림에 남습니다`,
       ],
       note: `상세 패널의 <b>버전 스냅샷</b>에서 버전별 메모를 확인·편집하고, 재검토 시 "지난 검토 이후 변경분" diff를 열 수 있습니다. 버전 값 자체는 <code>/mino-spec</code>이 소유합니다.`,
     },
@@ -262,8 +287,9 @@
         `<b>승인</b> — <code>spec_approved</code>로 전환, 개발자의 PR 생성 잠금 해제`,
         `<b>반려</b> — <code>spec_changes_requested</code>로 전환. <b>코멘트가 1개 이상</b> 있어야 반려 가능(무엇을 고칠지 없이 반려 불가)`,
         `<b>보충 코멘트</b> — 이미 반려된 스펙에 상태 변경 없이 코멘트만 더할 때 <code>💬 코멘트 추가</code> 사용`,
+        `<b>자체 승인 확인</b> — 개발자가 <b>디자인 영향이 없다고 판단한 재업로드</b>는 컨펌 없이 승인될 수 있습니다(<code>⚡ 자체 승인</code>). 이때 Discord 로 <b>사유와 함께</b> 알림이 오고, 목록·상세에 <b>자체 승인</b> 배지가 붙습니다. 확인해보고 검토가 필요하다고 판단되면 개발자에게 재컨펌을 요청하세요`,
       ],
-      note: `검토 중(<code>spec_in_review</code>)에는 개발자가 spec을 수정할 수 없습니다. 개발자가 승인 이후 spec을 수정하면 승인이 자동 해제되어 다시 검토 대기로 돌아올 수 있습니다.`,
+      note: `검토 중(<code>spec_in_review</code>)에는 개발자가 spec을 수정할 수 없습니다. 개발자가 승인 이후 spec을 수정하면 승인이 자동 해제되어 다시 검토 대기로 돌아올 수 있습니다. 첫 승인은 반드시 디자이너가 합니다 — 자체 승인은 이미 한 번 승인된 스펙에서만 가능합니다.`,
     },
   };
 
@@ -344,7 +370,7 @@
       const pr = f.prNumber ? `<a href="${f.prUrl}" target="_blank" rel="noopener" onclick="event.stopPropagation()">#${f.prNumber}</a>` : '<span class="feat-sub">—</span>';
       return `<tr class="${sel}" data-id="${f.featureId}">
         <td><div class="feat-title">${esc(f.title)}</div><div class="feat-sub mono">${esc(f.slug)}</div></td>
-        <td><div class="status-cell">${statusBadge(f.status)}${tbdBadge(f)}${compatBadge(f)}</div></td>
+        <td><div class="status-cell">${statusBadge(f.status)}${selfApprovedBadge(f)}${tbdBadge(f)}${compatBadge(f)}</div></td>
         <td class="mono">${esc(f.specVersion || '-')}</td>
         <td>${pr}</td></tr>`;
     }).join('');
@@ -751,6 +777,7 @@
         <h2>${esc(f.title)}</h2>
         <div class="detail-badges">
           ${statusBadge(f.status)}
+          ${selfApprovedBadge(f)}
           ${f.prNumber ? badge('PR #' + f.prNumber, 'blue') : ''}
         </div>
       </div>
@@ -880,6 +907,11 @@
     if (isDev) {
       if (['spec_draft', 'spec_changes_requested'].includes(f.status)) {
         btns.push(`<button class="btn-ghost" data-act="edit-spec">spec 수정</button>`);
+        // 자체 승인은 `spec_draft` + 디자이너 승인 이력이 있을 때만 — 반려됨에서는 뜨지 않는다.
+        if (canSelfApprove(f)) {
+          btns.push(`<button class="btn-ghost" data-act="self-approve"
+            title="디자인 영향이 없는 변경일 때만 — 디자이너 컨펌 없이 승인합니다(사유 필수)">⚡ 자체 승인</button>`);
+        }
         btns.push(`<button class="btn-primary" data-act="request-review">컨펌 요청</button>`);
       } else if (f.status === 'spec_approved') {
         btns.push(`<button class="btn-ghost" data-act="edit-spec">spec 수정</button>`);
@@ -920,6 +952,16 @@
         `${c.hint}\n\n그대로 검수에 올릴까요?`)) return;
       doTransition(() => features.requestReview(f.featureId));
     });
+    on('self-approve', () => {
+      // 사유 필수 — 이력·PR 본문·Discord 알림에 그대로 실린다.
+      const reason = prompt(
+        '디자이너 컨펌 없이 승인합니다 — 디자인에 영향이 없는 변경일 때만 사용하세요.\n'
+        + '사유는 컨펌 이력 · spec PR 본문 · Discord 알림에 그대로 남습니다.\n\n'
+        + '예) PRD 1.2.0 반영 — 기준 PRD 버전만 갱신, 화면·요구사항 변경 없음', '');
+      if (reason === null) return;                       // 취소
+      if (!reason.trim()) { alert('자체 승인 사유는 필수입니다.'); return; }
+      doTransition(() => features.selfApprove(f.featureId, reason.trim()));
+    });
     on('review-spec', () => openDoc(f));
     on('create-pr', () => {
       const head = specBranchOf(f.baseBranch);
@@ -948,7 +990,11 @@
 
   function reviewsHtml(f) {
     if (!f.reviews || !f.reviews.length) return '';
-    const TAG = { approved: badge('승인', 'green'), changes_requested: badge('반려', 'red'), comment: badge('코멘트', 'blue') };
+    const TAG = {
+      approved: badge('승인', 'green'), changes_requested: badge('반려', 'red'),
+      comment: badge('코멘트', 'blue'),
+      self_approved: badge('자체 승인', 'amber', '개발자가 디자이너 컨펌 없이 승인 (사유 필수)'),
+    };
     const items = f.reviews.slice().reverse().map((r) => {
       const tag = TAG[r.decision] || badge(r.decision, 'gray');
       const cs = (r.comments || []).map((c) => `<li><b>${esc(c.section || '전체')}</b> — ${esc(c.body)}</li>`).join('');
