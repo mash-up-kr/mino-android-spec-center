@@ -183,7 +183,7 @@
 - [x] `(fix)` 재로그인 시 `initControls` 가 같은 DOM 에 리스너를 겹쳐 붙여 **퀵필터 토글이 무효화**되던 기존 버그 — 배선은 1회, 역할별 UI 만 매 로그인 적용(`applyRoleUi`)
 - [x] `(seed)` 기능 스펙 데모 `now-feed-log` 추가 — Figma 근거 0건 · 체크리스트 PASS · S1–S6/C1–C7 통과(무검토 승인 해피패스가 mock 에서 재현됨)
 - [x] 검증: Functions 헬퍼 19건 + mock 가드·UI 45건 통과
-- [ ] `(ops)` rules · Functions 재배포 — **미배포**(P9.1 코드는 배포 전)
+- [x] `(ops)` rules · Functions 재배포 · 캐시 버스팅 — **완료(2026-08-19)**
 - [ ] 실 e2e — 기능 스펙 업로드 → 무검토 승인 → PR 생성 → PR 본문·Discord 문구 확인
 
 **확정 결정(2026-08-19)**: ① **전용 상태·전용 `decision` 값을 만들지 않는다** — 유지/무검토 구분은 `reviews[]` 에서 파생(앞에 디자이너 `approved` 가 있었는가) · ② **`reviewPolicy` 같은 전용 필드 미채택** — 디자인/기능 구분은 `figmaSources` 파생, 오분류는 표시 전용 + 재확인 confirm 으로 흡수 · ③ **"첫 승인은 디자이너" 원칙은 체크리스트 `PASS` + `[TBD]` 0건으로 대체**한다.
