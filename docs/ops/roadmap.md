@@ -142,13 +142,30 @@
 - [x] **P8.3 버전 호환** — 호환 등급 계산 · 목록/상세 뱃지 · "연결된 스펙" 표 · `prTemplate` 체크 줄. **표시 전용(차단 없음)**
 - [x] **P8.4 댓글** — `comments` 서브컬렉션(전원·섹션 앵커·1단 답글·소프트 삭제) + `@` **자동완성 드롭다운**(삽입 토큰은 GitHub 핸들 — `mentions[]` 정규식이 ASCII 전용) + `(rules)`. **P5.1 스레드 컴포넌트의 발판**
 - [x] **P8.5 알림** — `(BE)` `notifyOnPrdWrite`(등급별 색·역할 멘션·뒤처진 spec 목록 동봉) · `notifyOnPrdComment`(멘션 포함분만) · `?prd=` 딥링크. **등록·MAJOR·MINOR 는 Android·Design·iOS·Node 4개 역할**(2026-08-15) — PRD 는 제품 전체 문서. spec 파이프라인 알림은 Android/Design 그대로
-- [ ] **P8.6 배포·e2e** — rules/Functions 재배포 · 실 `/mino-prd` 산출물 e2e (캐시 버스팅은 반영됨)
+- [~] **P8.6 배포·e2e** — rules/Functions 재배포 **완료(2026-08-19, P9 와 함께)** · 실 `/mino-prd` 산출물 e2e 만 남음
 
 **확정 결정(2026-08-15)**: ① **PRD 의 PR 자동 생성은 하지 않는다**(커밋 경로가 `/mino-prd`+평상시 PR 로 이미 존재 — 두 번째 경로는 SoT 를 가른다) · ② **업로드 권한은 개발자 한정**(댓글은 전원이므로 요구사항 충족).
 
 의존: `P8.1 → {P8.2 ∥ P8.3 ∥ P8.4} → P8.5 → P8.6`. 가운데 셋은 서로 독립이라 병렬 가능.
 
 **검증(2026-08-15)**: 파서/검증/호환/diff 하니스 48건 · mock store 하니스 32건 · headless Chrome e2e 5스텝(문서 21 · 버전diff 17 · 연결된스펙 13 · 디자이너권한 13 · 업로드 27) **전부 통과**. 빈 `prd-template.md` 원본은 P5 로 차단되고, 템플릿 주석 속 예시(`[SCR-00X]` 등)는 주석 스트립으로 오탐되지 않음을 회귀 케이스로 고정.
+
+## P9 · 자체 승인 (컨펌 왕복 제거) — 완료 (2026-08-19)
+
+> PRD 개정 때마다 `/mino-spec` 재실행 → 재업로드 → 승인 해제 → **영향이 없어도 디자이너 재검수** 라는 왕복이
+> 피로 요인이라는 의견에서 출발. 개발자가 `⚡ 자체 승인`(사유 필수)으로 `spec_draft → spec_approved` 를 직접 통과한다.
+> 상세 설계는 [state-machine.md](../design/state-machine.md) §2.1.
+
+- [x] `(rules)` `devTransitionOk` 에 `spec_draft → spec_approved` 추가 — **`spec_changes_requested` 는 제외**(반려 뒤집기 차단)
+- [x] `(FE)` store 2종 `selfApprove(id, reason)` — 가드 ①`spec_draft` 한정 ②디자이너 `approved` 이력 필수 ③사유 필수
+- [x] `(FE)` 상세 `⚡ 자체 승인` 버튼(가드 충족 시에만 노출) · 사유 입력 · 목록/상세 **자체 승인** 뱃지 · 컨펌 이력 태그 · 범례/역할 가이드
+- [x] `(BE)` [notify.js](../../functions/notify.js) `⚡ 자체 승인` 알림 — **Design 역할 태그 + 사유 동봉**(철회 경로가 없으므로 이 알림이 디자이너의 사후 확인 지점)
+- [x] `(BE)` [functions/index.js](../../functions/index.js) `approvalLine` — 자체 승인 건은 PR 얼라인 체크리스트에서 **미체크 + 사유**로 표기(하드코딩된 `- [x] spec 컨펌됨` 을 대체)
+- [x] mock 하니스 10건(권한·상태·사유·이력 가드·반려 뒤집기 차단) + Functions 헬퍼 8건 통과
+- [x] `(ops)` rules 재배포 · Functions 재배포 · 캐시 버스팅 — **완료(2026-08-19)**. P8 미배포분(PRD 규칙·`notifyOnPrd*`)도 같이 나감
+- [ ] 실 e2e — 승인된 스펙에 PRD 개정본 재업로드 → 자체 승인 → PR 본문·Discord 문구 확인
+
+**확정 결정(2026-08-19)**: ① **사유 필수** · ② **첫 승인은 디자이너**(승인 이력 없는 스펙은 자체 승인 불가) · ③ **디자이너 승인 철회 미채택**(이견은 Discord 알림 → 개발자에게 재컨펌 요청으로 처리).
 
 ## P3 · 보안 규칙 강제 — 완료 (2026-07-06)
 - [x] `firestore.rules` 실 강제: 역할별 전이 허용목록(`devTransitionOk`/`desTransitionOk`) · 필드 잠금(prNumber/prUrl) · `spec_in_review` read-only · 위조 차단(`pr_open`/`merged`/`pr_closed`는 Functions 전용)

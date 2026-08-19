@@ -168,6 +168,34 @@
       return { ok: true, feature: this.get(id) };
     },
 
+    /**
+     * 자체 승인 (P9): 개발자가 디자이너 컨펌 없이 spec_draft → spec_approved.
+     * PRD 개정 반영처럼 **디자인 영향이 없는 재업로드**로 승인이 해제됐을 때,
+     * 같은 문서를 디자이너에게 다시 올리는 왕복을 없앤다.
+     * 컨펌 게이트 자체가 무력해지지 않도록 두 가드로 좁힌다:
+     *   ① `spec_draft` 에서만 — 반려됨(`spec_changes_requested`)에서 열어주면
+     *      개발자가 디자이너의 반려를 뒤집을 수 있다.
+     *   ② 디자이너 `approved` 이력이 있는 스펙만 — 신규 스펙이 통째로 게이트를 우회하지 못한다.
+     * 사유는 필수이며 `reviews[]` 에 남아 상세 이력·PR 본문·Discord 알림까지 따라간다.
+     */
+    selfApprove(id, reason) {
+      const i = idxOf(id); if (i < 0) return { ok: false, error: 'feature 없음' };
+      if (!auth.isDeveloper()) return { ok: false, error: '개발자만 자체 승인 가능' };
+      const note = String(reason || '').trim();
+      if (!note) return { ok: false, error: '자체 승인 사유는 필수입니다.' };
+      const f = store[i];
+      if (f.status !== 'spec_draft') {
+        return { ok: false, error: '자체 승인은 작성중(spec_draft) 상태에서만 가능합니다.' };
+      }
+      if (!hasDesignerApproval(f)) {
+        return { ok: false, error: '디자이너 승인 이력이 없는 스펙은 자체 승인할 수 없습니다 — 첫 컨펌은 디자이너가 합니다.' };
+      }
+      f.status = 'spec_approved';
+      f.reviews.push(review('self_approved', [{ section: '전체', body: note }]));
+      f.updatedAt = today(); persist();
+      return { ok: true, feature: this.get(id) };
+    },
+
     /** 디자이너 반려 + 코멘트 → spec_changes_requested */
     requestChanges(id, comments) {
       const i = idxOf(id); if (i < 0) return { ok: false, error: 'feature 없음' };
@@ -251,6 +279,11 @@
       if (v && out.indexOf(v) < 0) out.push(v);
     });
     return out;
+  }
+
+  // 디자이너가 한 번이라도 승인한 적 있는 스펙인가 (자체 승인 가드 ②)
+  function hasDesignerApproval(f) {
+    return (f.reviews || []).some((r) => r && r.decision === 'approved');
   }
 
   function review(decision, comments) {

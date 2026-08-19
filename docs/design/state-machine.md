@@ -1,7 +1,7 @@
 # 파이프라인 상태머신 (구현 명세)
 
 > 출처: [PRD](../PRD.md) 4.5 · 4.8 · 6장 · 8장
-> 상태: **구현 완료 (M0–M4 MVP, 실 백엔드 검증)** · v3 (plan 단계 제거 · base 브랜치 타겟) 기준
+> 상태: **구현 완료 (M0–M4 MVP, 실 백엔드 검증)** · v3 (plan 단계 제거 · base 브랜치 타겟) + **P9 자체 승인**(2026-08-19) 기준
 > 단위: `docs/specs/{feature}/` 한 묶음(`spec.md` + `quality/spec-checklist.md`)이 **단일 `status`** 를 가진다. 상태를 움직이는 건 spec 컨펌이고, 체크리스트는 같은 묶음에 실려 다닌다(검수 대상 아님).
 
 문서 "진실"은 Firestore(`features/{id}`)다. 레포 파일은 스냅샷이며 역수정하지 않는다.
@@ -26,7 +26,7 @@ plan/task 는 대시보드를 거치지 않고 같은 base 브랜치 아래 하�
 | `spec_draft` | spec 작성/수정 중 (초기 상태) | 개발자 | 편집가능 |
 | `spec_in_review` | 디자이너 검토 중 | **read-only** | 잠금 |
 | `spec_changes_requested` | 반려됨 | 개발자 | 편집가능 |
-| `spec_approved` | spec 컨펌 완료 → PR 생성 잠금 해제 | (수정 시 무효화) | read-only* |
+| `spec_approved` | spec 컨펌 완료 → PR 생성 잠금 해제. **도달 경로 2개**(디자이너 컨펌 · 개발자 자체 승인 §2.1) | (수정 시 무효화) | read-only* |
 | `pr_open` | spec PR 열림 (base 브랜치 타겟) | — | — |
 | `merged` | base 브랜치에 머지 완료 → plan/task 단계로 | — | — |
 | `pr_closed` | PR 미머지 종료 | — | — |
@@ -38,6 +38,7 @@ plan/task 는 대시보드를 거치지 않고 같은 base 브랜치 아래 하�
 | from | trigger | guard | to | 부수효과 |
 |---|---|---|---|---|
 | `spec_draft` | 컨펌요청 | 구조검증 통과(validation.md) · role=developer | `spec_in_review` | spec read-only 잠금 |
+| `spec_draft` | **자체 승인** | role=developer · **사유 ≥1자** · `reviews[]` 에 디자이너 `approved` 이력 존재 | `spec_approved` | `reviews[]` 에 `decision='self_approved'` + 사유 기록 · PR 생성 잠금 해제 · Discord 알림(**Design** 태그) |
 | `spec_changes_requested` | 컨펌요청(재요청) | 위와 동일 | `spec_in_review` | — |
 | `spec_in_review` | 승인 | role=designer | `spec_approved` | `reviews[]` 기록 · PR 생성 잠금 해제 |
 | `spec_in_review` | 반려+코멘트 | role=designer · 코멘트≥1 | `spec_changes_requested` | `reviews[]` 기록 |
@@ -47,6 +48,36 @@ plan/task 는 대시보드를 거치지 않고 같은 base 브랜치 아래 하�
 | `pr_closed` | 재오픈/재PR | role=developer | `pr_open` | 새 PR 또는 재오픈 |
 
 > **PR 권한 정정(2026-07-04)**: Firebase Auth GitHub provider가 GitHub App client로 설정돼 있어 **로그인 토큰이 이미 PR-capable**(user-to-server). 별도 `authorize`/`githubOAuthExchange` 온보딩은 폐기됐다 — 로그인=신원+PR권한 겸함.
+
+### 2.1 자체 승인 (P9 · 2026-08-19)
+
+PRD 가 개정될 때마다 `/mino-spec` 을 재실행해 올리면 헤더 `**기준 PRD 버전**` 만 바뀐 문서라도
+무효화 연쇄(§3)가 걸려 `spec_draft` 로 떨어진다. 그 스펙을 **디자인 영향이 없는데도** 다시
+디자이너 검수에 올리는 왕복이 반복되는 것이 도입 배경이다. 개발자가 `⚡ 자체 승인` 으로
+컨펌 없이 `spec_approved` 로 되돌린다.
+
+**상태는 늘리지 않는다.** 자체 승인도 도착지는 같은 `spec_approved` 다 — 전용 상태를 만들면
+스테퍼·필터·보안규칙·알림·`createSpecPR` 가드까지 전부 갈라지는데 얻는 건 표기 하나뿐이다.
+구분은 `reviews[]` 의 `decision` 에만 남기고, 필요한 지점에서 파생해 표시한다.
+
+| 가드 | 이유 |
+|---|---|
+| **`spec_draft` 에서만** | `spec_changes_requested` 에서 열어주면 개발자가 디자이너의 **반려를 뒤집을** 수 있다. 목표 시나리오(승인 해제 후 재승인)는 항상 `spec_draft` 를 거치므로 손해가 없다. 보안규칙 `devTransitionOk` 도 같은 제한을 건다 |
+| **디자이너 `approved` 이력 필수** | 신규 스펙이 컨펌 게이트를 **통째로 우회**하는 경로를 막는다. "첫 승인은 반드시 디자이너"가 유지되고, 자체 승인은 *이미 승인된 스펙의 유지 승인* 으로 범위가 좁혀진다. rules 에는 배열 원소를 훑는 연산이 없어 **클라이언트 가드**다(`store.selfApprove`) |
+| **사유 필수** | 디자이너를 건너뛴 이유가 남지 않으면 나중에 아무도 판단 근거를 모른다. 사유는 `reviews[]` → 상세 이력 · PR 본문 · Discord 알림 세 곳으로 그대로 따라간다 |
+
+**승인 경로가 갈라져 보이는 3지점** — 상태가 같으므로 이 셋이 유일한 구분 표면이다.
+
+| 지점 | 디자이너 컨펌 | 자체 승인 |
+|---|---|---|
+| `reviews[]` | `decision:'approved'` · reviewerUid = 디자이너 | `decision:'self_approved'` · reviewerUid = **개발자** + 사유 |
+| Discord ([notify.js](../../functions/notify.js)) | `✅ 승인됨` · Android 태그 | `⚡ 자체 승인` · **Design 태그** + 사유 본문 |
+| spec PR 본문 ([functions/index.js](../../functions/index.js) `approvalLine`) | `- [x] spec 컨펌됨 (디자이너 승인)` | `- [ ] spec 컨펌 — **개발자 자체 승인** · 사유: …` (**미체크** → CODEOWNERS 리뷰어가 알아챈다) |
+
+대시보드 목록·상세에도 `자체 승인` 뱃지가 붙어 디자이너가 "내가 안 본 승인"을 훑을 수 있다.
+
+> **승인 철회는 두지 않았다**(2026-08-19 결정). 디자이너가 자체 승인에 이견이 있으면 Discord 알림을 보고
+> 개발자에게 재컨펌을 요청하는 경로로 처리한다. 상태머신에 `spec_approved → spec_in_review`(디자이너) 전이는 **없다**.
 
 ### 무효화 전이 (어느 상태에서든)
 | from | trigger | to | 부수효과 |
@@ -72,7 +103,8 @@ plan/task 는 대시보드를 거치지 않고 같은 base 브랜치 아래 하�
 ```mermaid
 flowchart LR
     draft["spec_draft"] -->|컨펌요청| review["spec_in_review"]
-    review -->|승인| approved["spec_approved"]
+    draft ==>|"⚡ 자체 승인<br/>(사유 필수 · 승인 이력 필요)"| approved["spec_approved"]
+    review -->|승인| approved
     review -->|반려+코멘트| changes["spec_changes_requested"]
     changes -->|수정 후 재요청| review
     approved -->|PR 생성| pr["pr_open"]
@@ -105,6 +137,7 @@ flowchart TD
 |---|---|
 | `spec_draft` 생성 · 구조검증 | M1 |
 | `→spec_in_review`/`→spec_approved`/`→spec_changes_requested` (컨펌 게이트) | M2 |
+| `spec_draft →spec_approved` (자체 승인 §2.1) | P9 |
 | `→pr_open` (createSpecPR) | M3 |
 | `→merged`/`→pr_closed` (Webhook) · 무효화 연쇄 | M4 |
 

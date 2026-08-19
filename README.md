@@ -38,6 +38,7 @@ spec_draft → spec_in_review → spec_approved → pr_open → merged
 ```
 
 > 승인 후 spec을 수정하면 자동으로 **무효화**됩니다 — `spec_draft`로 복귀하고 열린 PR은 자동 close됩니다.
+> 해제된 변경이 **디자인에 영향이 없으면**(예: PRD 개정 반영) 개발자가 **`⚡ 자체 승인`**(사유 필수)으로 컨펌 왕복 없이 되돌릴 수 있습니다 — 첫 승인은 반드시 디자이너가 하고, 반려된 스펙에는 쓸 수 없습니다.
 > plan·task는 대시보드를 거치지 않습니다. spec PR이 base 브랜치에 머지된 뒤 같은 base 아래에서 `/mino-plan`·`/mino-task`로 이어집니다.
 
 ---
@@ -48,6 +49,7 @@ spec_draft → spec_in_review → spec_approved → pr_open → merged
 |---|---|---|
 | 📤 | **스펙 업로드 + 구조 검증** | `/mino-spec` 산출물 2개(`spec.md` + `quality/spec-checklist.md`)를 파일로 첨부(드롭 시 본문 H1으로 자동 분류). spec은 **S1–S6**, 체크리스트는 **C1–C7** 기계 검증 통과 시 생성. 상태 `DRAFT`·`[TBD]` 잔여·체크리스트 `FAILED`는 **차단하지 않고 경고** — 확정이 필요한 스펙일수록 검수에 올린다 ([validation.md](docs/design/validation.md)) |
 | ✅ | **디자이너 컨펌 게이트** | 유저 플로우/요구사항 단위 **인라인 코멘트**로 승인·반려. 검토 중에는 spec read-only 잠금 |
+| ⚡ | **자체 승인** | 디자인 영향이 없는 재업로드(PRD 개정 반영 등)는 개발자가 **사유를 남기고** 컨펌 없이 승인. 이미 디자이너 승인을 받은 스펙에서만 가능하고, 사유는 이력·PR 본문·Discord 알림에 남습니다 |
 | 🔀 | **base 브랜치 타겟 spec PR** | 승인 시 `<prefix>/<이슈번호>-<slug>/spec` 브랜치를 **이슈 base 브랜치에서 분기**해 커밋·PR 생성. base 목록은 GitHub API로 조회해 업로드 시 선택 |
 | 🔁 | **웹훅 상태 동기화** | PR merged/closed 이벤트를 HMAC 검증 후 수신 → Firestore 상태 자동 갱신 |
 | 🧬 | **버전 스냅샷** | 버전 값은 `/mino-spec` 스킬이 소유(헤더 `**버전**`). 대시보드는 버전별 본문 스냅샷만 남기고 MAJOR/MINOR/PATCH는 semver 비교로 파생 표시 |
